@@ -21,7 +21,7 @@ def handle_cam(cam: Webcam):
         cam.get()
         cam.add_logo()
         cam.upload_image()
-        print(cam.upload)
+        # print(cam.upload)
     except Exception as e:
         error_message = f'{cam.name} failed. {e}'
         print(error_message)
