@@ -23,7 +23,7 @@ class Webcam:
         # Connect to the FTP server
         ftp = FTP(os.getenv('server'))
         ftp.login(self.username, self.password)
-        print(ftp.nlst())
+        # print(ftp.nlst())
         def handle_binary(data):
             self.file_buffer.write(data)
 
