@@ -1,0 +1,116 @@
+import io
+import os
+from time import sleep
+from ftplib import FTP
+from datetime import datetime, timedelta
+
+from dotenv import load_dotenv
+import ffmpeg
+from Webcam import Webcam
+
+load_dotenv('environment.env')
+
+class AllskyVideo(Webcam):
+    def __init__(self, name, file_name_on_server, logo_place, logo_size, username=None, password=None):
+        self.name = name
+        self.file_buffer = io.BytesIO()
+        self.logoed = io.BytesIO()
+
+        self.available = False
+        self.file_name_on_server = file_name_on_server
+        self.logo_place = logo_place
+        self.logo_size = logo_size
+        self.username = username
+        self.password = password
+
+        self.mod_time = None
+        self.mod_time_str = ''
+        self.upload = None
+
+    def get(self):
+        # Connect to the FTP server
+        ftp = FTP(os.getenv('server'))
+        ftp.login(self.username, self.password)
+
+        # Check if file is there, if it's not it may just need a few seconds to finish uploading.
+        if self.file_name_on_server not in ftp.nlst():
+            return
+
+        self.available = True
+
+        # Save the file into the buffer.
+        ftp.retrbinary(f'RETR {self.file_name_on_server}', self.file_buffer.write)
+        self.file_buffer.seek(0)
+
+        self.set_mod_time(ftp) # Set the file modification time.
+
+        with open('allsky.mp4', 'wb') as allsky:
+            allsky.write(self.file_buffer.getvalue())
+
+        # Close the FTP connection
+        ftp.quit()
+
+    def add_logo(self):
+        if not self.available:
+            return
+
+        # Set up the input and output streams
+        input_stream = ffmpeg.input('allsky.mp4')
+        logo_stream = ffmpeg.input('logo-shaded-video.png')
+        output_stream = ffmpeg.output(
+            input_stream.overlay(logo_stream, x=self.logo_place[0], y=self.logo_place[1]),
+            'allsky-logo.mp4',
+            format='mp4'
+        )
+
+        # Run ffmpeg
+        ffmpeg.run(output_stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+        self.logoed = 'allsky-logo.mp4'
+
+
+    def upload_image(self):
+        if not self.available:
+            return
+
+        file_path = f'{self.name}.mp4'
+
+        # Connect to the FTP server
+        ftp = FTP(os.getenv('server'))
+        ftp.login(os.getenv('username'), os.getenv('password'))
+
+        # Store the file and close connection
+        with open(self.logoed, 'rb') as vid:
+            ftp.storbinary('STOR ' + f'{self.name}.mp4', vid)
+            ftp.quit()
+
+        self.upload = f'https://glacier.org/webcam/{file_path}'
+
+        # Once it's logoed and uploaded, remove from FTP server.
+        self.delete_on_FTP_server()
+
+    def delete_on_FTP_server(self):
+        # Connect to the FTP server
+        ftp = FTP(os.getenv('server'))
+        ftp.login(self.username, self.password)
+
+        # Remove the allsky video
+        if self.file_name_on_server in ftp.nlst():
+            ftp.delete(self.file_name_on_server)
+
+        # Close the FTP connection
+        ftp.quit()
+
+
+if __name__ == "__main__":
+    vid = AllskyVideo(
+        name='allsky',
+        file_name_on_server='allsky.mp4',
+        logo_place=(0,619),
+        logo_size=(299,68),
+        username=os.getenv('darksky_user'),
+        password=os.getenv('darksky_pwd'))
+
+    vid.get()
+    vid.available = True
+    vid.add_logo()
+    vid.upload_image()

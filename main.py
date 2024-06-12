@@ -1,30 +1,37 @@
 from Webcam import Webcam
+from AllskyVideo import AllskyVideo
 import threading
 import os
 from time import sleep
-from send_email import email_alert
 from dotenv import load_dotenv
 
 load_dotenv('environment.env')
 
 dark_sky = Webcam(name='dark_sky',
-             file_name_on_server='stmaryallsky-resize.jpg',
-             logo_place=(0,619),
-             logo_size=(299,68),
-             username=os.getenv('darksky_user'),
-             password=os.getenv('darksky_pwd'))
+            file_name_on_server='stmaryallsky-resize.jpg',
+            logo_place=(0,619),
+            logo_size=(299,68),
+            username=os.getenv('darksky_user'),
+            password=os.getenv('darksky_pwd'))
 
-cams = [dark_sky]
+allsky = AllskyVideo(
+            name='allsky',
+            file_name_on_server='allsky.mp4',
+            logo_place=(0,619),
+            logo_size=(299,68),
+            username=os.getenv('darksky_user'),
+            password=os.getenv('darksky_pwd'))
+
+cams = [dark_sky, allsky]
 
 def handle_cam(cam: Webcam):
     try:
         cam.get()
         cam.add_logo()
         cam.upload_image()
-        # print(cam.upload)
+
     except Exception as e:
         error_message = f'{cam.name} failed. {e}'
-        print(error_message)
         return error_message
 
 def main():
@@ -42,7 +49,7 @@ def main():
     errors = [item for item in errors if item is not None]
     if errors:
         error_message = '\n\n'.join(errors)
-        email_alert(error_message)
+        print(error_message) # Printing will trigger cron to send an email
 
 if __name__ == "__main__":
     for i in range(2):

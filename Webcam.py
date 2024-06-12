@@ -1,7 +1,7 @@
 import io
 import os
 from time import sleep
-from ftplib import FTP
+from ftplib import FTP, error_perm
 from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
@@ -89,7 +89,11 @@ class Webcam:
 
     def set_mod_time(self, ftp: FTP):
         # Send the MDTM command to the FTP server
-        response = ftp.sendcmd(f"MDTM {self.file_name_on_server}")
+        try:
+            response = ftp.sendcmd(f"MDTM {self.file_name_on_server}")
+        except error_perm as e:
+            if str(e).startswith('550'):
+                pass
 
         # The response will be in the format: '213 YYYYMMDDHHMMSS'
         if response.startswith('213'):
