@@ -1,9 +1,12 @@
-from Webcam import Webcam
-from AllskyVideo import AllskyVideo
-import threading
 import os
+import threading
+import traceback
 from time import sleep
+
 from dotenv import load_dotenv
+
+from AllskyVideo import AllskyVideo
+from Webcam import Webcam
 
 load_dotenv('environment.env')
 
@@ -30,9 +33,8 @@ def handle_cam(cam: Webcam):
         cam.add_logo()
         cam.upload_image()
 
-    except Exception as e:
-        error_message = f'{cam.name} failed. {e}'
-        return error_message
+    except Exception:
+        return f'{cam.name} failed. {traceback.format_exc()}'
 
 def main():
     threads = []
