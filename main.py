@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv('environment.env')
 
 dark_sky = Webcam(name='dark_sky',
-             ip='stmaryallsky-resize.jpg',
+             file_name_on_server='stmaryallsky-resize.jpg',
              logo_place=(0,619),
              logo_size=(299,68),
              username=os.getenv('darksky_user'),
