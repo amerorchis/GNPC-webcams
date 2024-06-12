@@ -30,20 +30,28 @@ class Webcam:
         ftp = FTP(os.getenv('server'))
         ftp.login(self.username, self.password)
 
-        # Check if file is there, if it's not it may just need a few seconds to finish uploading.
-        if self.file_name_on_server not in ftp.nlst():
-            sleep(6)
-            if self.file_name_on_server not in ftp.nlst():
-                raise FileNotFoundError(f"{self.name} wasn't found in the folder.")
+        def get_image():
+            ftp.retrbinary(f'RETR {self.file_name_on_server}', self.file_buffer.write)
+            self.file_buffer.seek(0)
 
-        # Save the file into the buffer.
-        ftp.retrbinary(f'RETR {self.file_name_on_server}', self.file_buffer.write)
-        self.file_buffer.seek(0)
+            self.set_mod_time(ftp) # Set the file modification time.
 
-        self.set_mod_time(ftp) # Set the file modification time.
+            # Close the FTP connection
+            ftp.quit()
 
-        # Close the FTP connection
-        ftp.quit()
+        # Try to save the image.
+        try:
+            get_image()
+        # If it's not there, wait 6 seconds and try again
+        except error_perm as e:
+            if str(e).startswith('550'):
+                sleep(6)
+            try:
+                get_image()
+
+            # If it's still not there, raise an exception.
+            except error_perm as exc:
+                raise FileNotFoundError(f"{self.name} wasn't found in the folder.") from exc
 
     def add_logo(self):
         # Open the images
