@@ -91,13 +91,14 @@ class Webcam:
         # Send the MDTM command to the FTP server
         try:
             response = ftp.sendcmd(f"MDTM {self.file_name_on_server}")
+
+            # The response will be in the format: '213 YYYYMMDDHHMMSS'
+            if response.startswith('213'):
+                time_str = response[4:].strip()
+                mod_time = datetime.strptime(time_str, '%Y%m%d%H%M%S') - timedelta(hours=6)
+                self.mod_time = mod_time
+                self.mod_time_str = mod_time.strftime('%-I:%M%p %b. %d, %Y')
+
         except error_perm as e:
             if str(e).startswith('550'):
                 pass
-
-        # The response will be in the format: '213 YYYYMMDDHHMMSS'
-        if response.startswith('213'):
-            time_str = response[4:].strip()
-            mod_time = datetime.strptime(time_str, '%Y%m%d%H%M%S') - timedelta(hours=6)
-            self.mod_time = mod_time
-            self.mod_time_str = mod_time.strftime('%-I:%M%p %b. %d, %Y')
