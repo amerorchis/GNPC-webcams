@@ -2,10 +2,10 @@ import io
 import os
 from time import sleep
 from ftplib import FTP
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 load_dotenv('environment.env')
 
@@ -13,13 +13,16 @@ class Webcam:
     def __init__(self, name, file_name_on_server, logo_place, logo_size, username=None, password=None):
         self.name = name
         self.file_buffer = io.BytesIO()
+        self.logoed = io.BytesIO()
+
         self.file_name_on_server = file_name_on_server
         self.logo_place = logo_place
         self.logo_size = logo_size
         self.username = username
         self.password = password
+
         self.mod_time = None
-        self.logoed = None
+        self.mod_time_str = ''
         self.upload = None
 
     def get(self):
@@ -56,10 +59,20 @@ class Webcam:
         # Paste logo onto cam at the specified location
         webcam_and_logo.paste(logo, self.logo_place, logo)
 
-        path = f'images/{self.name}_logo.jpg'
+        # Cover old datetime
+        corner_rectangle = Image.open('corner-rectangle.png')
+        webcam_and_logo.paste(corner_rectangle, None)
 
-        webcam_and_logo.save(path)
-        self.logoed = path
+        # Add datetime
+        draw = ImageDraw.Draw(webcam_and_logo)
+        font = ImageFont.truetype("OpenSans-Bold.ttf", 16)
+        text_position = (4, 3)
+        text_color = (255, 255, 255)
+        draw.text(text_position, self.mod_time_str, font=font, fill=text_color)
+
+        # Save logoed file
+        webcam_and_logo.save(self.logoed, format="JPEG")
+        self.logoed.seek(0)
 
     def upload_image(self):
         file_path = f'{self.name}.jpg'
@@ -68,12 +81,8 @@ class Webcam:
         ftp = FTP(os.getenv('server'))
         ftp.login(os.getenv('username'), os.getenv('password'))
 
-        # Open the local file in binary mode
-        with open(self.logoed, 'rb') as f:
-            # Upload the file to the FTP server
-            ftp.storbinary('STOR ' + file_path, f)
-
-        # Close the FTP connection
+        # Store the file and close connection
+        ftp.storbinary('STOR ' + f'{self.name}.jpg', self.logoed)
         ftp.quit()
 
         self.upload = f'https://glacier.org/webcam/{file_path}'
@@ -85,5 +94,6 @@ class Webcam:
         # The response will be in the format: '213 YYYYMMDDHHMMSS'
         if response.startswith('213'):
             time_str = response[4:].strip()
-            mod_time = datetime.strptime(time_str, '%Y%m%d%H%M%S')
+            mod_time = datetime.strptime(time_str, '%Y%m%d%H%M%S') - timedelta(hours=6)
             self.mod_time = mod_time
+            self.mod_time_str = mod_time.strftime('%-I:%M%p %b. %d, %Y')
