@@ -1,3 +1,7 @@
+"""
+Custom class to represent an individual webcam.
+"""
+
 import io
 import os
 from time import sleep
@@ -107,6 +111,7 @@ class Webcam:
                 self.mod_time = mod_time
                 self.mod_time_str = mod_time.strftime('%-I:%M%p %b. %d, %Y')
 
+        # 550 errors can be ignored
         except error_perm as e:
             if str(e).startswith('550'):
                 pass

@@ -1,8 +1,10 @@
+"""
+A class to represent the overnight timelapse video. Inherits from Webcam to maintain the same API.s
+"""
+
 import io
 import os
-from time import sleep
 from ftplib import FTP
-from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 import ffmpeg
@@ -11,7 +13,10 @@ from Webcam import Webcam
 load_dotenv('environment.env')
 
 class AllskyVideo(Webcam):
-    def __init__(self, name, file_name_on_server, logo_place, logo_size, username=None, password=None):
+    """
+    Overnight timelapse video object. (Could be a singleton with class methods)
+    """
+    def __init__(self, name, file_name_on_server, logo_place, logo_size, username, password):
         self.name = name
         self.file_buffer = io.BytesIO()
         self.logoed = io.BytesIO()
@@ -32,11 +37,12 @@ class AllskyVideo(Webcam):
         ftp = FTP(os.getenv('server'))
         ftp.login(self.username, self.password)
 
-        # Check if file is there, if it's not it may just need a few seconds to finish uploading.
+        # Check if file is there, if it's not we don't need to do anything else with this 
+        # object on this round.
         if self.file_name_on_server not in ftp.nlst():
             return
 
-        self.available = True
+        self.available = True # Mark that the video was found.
 
         # Save the file into the buffer.
         ftp.retrbinary(f'RETR {self.file_name_on_server}', self.file_buffer.write)
@@ -44,6 +50,7 @@ class AllskyVideo(Webcam):
 
         self.set_mod_time(ftp) # Set the file modification time.
 
+        # Save the video to disk
         with open('allsky.mp4', 'wb') as allsky:
             allsky.write(self.file_buffer.getvalue())
 
@@ -65,14 +72,20 @@ class AllskyVideo(Webcam):
 
         # Run ffmpeg
         ffmpeg.run(output_stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
-        self.logoed = 'allsky-logo.mp4'
+        self.logoed = 'allsky-logo.mp4' # Path to logo video file.
 
 
     def upload_image(self):
+        """
+        Don't change the name of this even though it's a video not image because
+        it works with the same API as the webcams this way.
+        """
+
+        # Make sure there is a video to upload
         if not self.available:
             return
 
-        file_path = f'{self.name}.mp4'
+        file_path = f'{self.name}.mp4' # Desired file name on server
 
         # Connect to the FTP server
         ftp = FTP(os.getenv('server'))
@@ -83,12 +96,17 @@ class AllskyVideo(Webcam):
             ftp.storbinary('STOR ' + f'{self.name}.mp4', vid)
             ftp.quit()
 
-        self.upload = f'https://glacier.org/webcam/{file_path}'
+        self.upload = f'https://glacier.org/webcam/{file_path}' # URL for the video
 
         # Once it's logoed and uploaded, remove from FTP server.
         self.delete_on_FTP_server()
 
     def delete_on_FTP_server(self):
+        """
+        Once video is on HTML server with logo, delete from FTP server so we
+        don't keep uploading it.
+        """
+
         # Connect to the FTP server
         ftp = FTP(os.getenv('server'))
         ftp.login(self.username, self.password)
