@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+
+"""
+Controls the operation of the program to add logos to and upload webcam photos and videos
+from the glacier.org FTP server to HTML server.
+"""
+
 import os
 import threading
 import traceback
@@ -10,14 +17,14 @@ from Webcam import Webcam
 
 load_dotenv('environment.env')
 
-dark_sky = Webcam(name='dark_sky',
+dso_camera = Webcam(name='dark_sky',
             file_name_on_server='stmaryallsky-resize.jpg',
             logo_place=(0,619),
             logo_size=(299,68),
             username=os.getenv('darksky_user'),
             password=os.getenv('darksky_pwd'))
 
-allsky = AllskyVideo(
+dso_timelapse = AllskyVideo(
             name='allsky',
             file_name_on_server='allsky.mp4',
             logo_place=(0,619),
@@ -25,7 +32,7 @@ allsky = AllskyVideo(
             username=os.getenv('darksky_user'),
             password=os.getenv('darksky_pwd'))
 
-cams = [dark_sky, allsky]
+cams = [dso_camera, dso_timelapse]
 
 def handle_cam(cam: Webcam):
     try:
