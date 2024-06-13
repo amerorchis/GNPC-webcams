@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#! /usr/bin/python3
 
 """
 Controls the operation of the program to add logos to and upload webcam photos and videos
