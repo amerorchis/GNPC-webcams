@@ -1,10 +1,12 @@
-# Darksky Camera Operation
+# GNPC Webcams Operation
 
-The Dusty Star Observatory webcam in St. Mary uploads photos every minute and a video timelapse once a day to the glacier.org FTP server.
+The Dusty Star Observatory webcam in St. Mary and the 3 Logan Pass webcams upload photos every minute and a video timelapse once a day (from the observatory) to the glacier.org FTP server.
 
 ## Photos
 
 Twice a minute, this program grabs the image in the FTP folder, adds the GNPC logo, covers the ugly timestamp, adds a nicer looking timestamp, and uploads the new photo to the HTML server.
+
+The Logo object defines a logo placement. This is necessary because the NPS and glacier.org websites crop the images differently.
 
 ## Video
 
