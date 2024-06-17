@@ -23,7 +23,7 @@ dso_camera = Webcam(name='dark_sky',
             password=os.getenv('ftp_get_pwd'),
             logo_placements=[
                 Logo(
-                    place=(0,619),
+                    place=(0,604),
                     size=(299,68),
                     subname='nps',
                     cover_date=True),
