@@ -101,7 +101,7 @@ class Webcam:
 
     def add_logo(self):
         for i in self.logo_placements:
-            i.add_logo(self.file_buffer)
+            i.add_logo(self.file_buffer, self.mod_time_str)
 
     def upload_image(self):
         # Connect to the FTP server
