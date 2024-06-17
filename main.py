@@ -13,26 +13,89 @@ from time import sleep
 from dotenv import load_dotenv
 
 from AllskyVideo import AllskyVideo
-from Webcam import Webcam
+from Webcam import Webcam, Logo
 
 load_dotenv('environment.env')
 
 dso_camera = Webcam(name='dark_sky',
             file_name_on_server='stmaryallsky-resize.jpg',
-            logo_place=(0,619),
-            logo_size=(299,68),
-            username=os.getenv('darksky_user'),
-            password=os.getenv('darksky_pwd'))
+            username=os.getenv('ftp_get_user'),
+            password=os.getenv('ftp_get_pwd'),
+            logo_placements=[
+                Logo(
+                    place=(0,619),
+                    size=(299,68),
+                    subname='nps',
+                    cover_date=True),
+                Logo(
+                    place=(0,619),
+                    size=(299,68),
+                    cover_date=True)
+            ])
+
+lpp = Webcam(name='lpp',
+            file_name_on_server='lpp.jpg',
+            username=os.getenv('ftp_get_user'),
+            password=os.getenv('ftp_get_pwd'),
+            logo_placements=[
+                Logo(
+                    place=(1507,10),
+                    size=(531,88),
+                    img='logo.png',
+                    subname='nps'
+                ),
+                Logo(
+                    place=(0, 1400),
+                    size=(612,137),
+                    img='logo-shaded.png',
+                ),
+            ])
+
+smv = Webcam(name='smv',
+            file_name_on_server='smv.jpg',
+            username=os.getenv('ftp_get_user'),
+            password=os.getenv('ftp_get_pwd'),
+            logo_placements=[
+                Logo(
+                    place=(140,944),
+                    size=(612,137),
+                    img='logo-shaded.png',
+                    subname='nps'
+                ),
+                Logo(
+                    place=(0,944),
+                    size=(612,137),
+                    img='logo-shaded.png',
+                ),
+            ])
+
+hlt = Webcam(name='hlt',
+            file_name_on_server='hlt.jpg',
+            username=os.getenv('ftp_get_user'),
+            password=os.getenv('ftp_get_pwd'),
+            logo_placements=[
+                Logo(
+                    place=(140,944),
+                    size=(612,137),
+                    img='logo-shaded.png',
+                    subname='nps'
+                ),
+                Logo(
+                    place=(0,944),
+                    size=(612,137),
+                    img='logo-shaded.png',
+                ),
+            ])
 
 dso_timelapse = AllskyVideo(
             name='allsky',
             file_name_on_server='allsky.mp4',
             logo_place=(0,619),
             logo_size=(299,68),
-            username=os.getenv('darksky_user'),
-            password=os.getenv('darksky_pwd'))
+            username=os.getenv('ftp_get_user'),
+            password=os.getenv('ftp_get_pwd'))
 
-cams = [dso_camera, dso_timelapse]
+cams = [dso_camera, lpp, smv, hlt, dso_timelapse]
 
 def handle_cam(cam: Webcam):
     try:

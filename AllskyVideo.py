@@ -125,8 +125,8 @@ if __name__ == "__main__":
         file_name_on_server='allsky.mp4',
         logo_place=(0,619),
         logo_size=(299,68),
-        username=os.getenv('darksky_user'),
-        password=os.getenv('darksky_pwd'))
+        username=os.getenv('ftp_get_user'),
+        password=os.getenv('ftp_get_pwd'))
 
     vid.get()
     vid.available = True
