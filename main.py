@@ -124,6 +124,9 @@ def main():
         print(error_message) # Printing will trigger cron to send an email
 
 if __name__ == "__main__":
+    # Photos are uploaded right on the minute, so we want to wait for them to finish
+    sleep(8)
+
     for i in range(2):
         main()
-        sleep(45)
+        sleep(40)
