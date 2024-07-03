@@ -87,6 +87,18 @@ hlt = Webcam(name='hlt',
                 ),
             ])
 
+stuck = Webcam(name='stuck',
+            file_name_on_server='stuck.jpg',
+            username=os.getenv('ftp_get_user'),
+            password=os.getenv('ftp_get_pwd'),
+            logo_placements=[
+                Logo(
+                    place=(0,944),
+                    size=(612,137),
+                    img='logo-shaded.png',
+                ),
+            ])
+
 dso_timelapse = AllskyVideo(
             name='allsky',
             file_name_on_server='allsky.mp4',
@@ -95,7 +107,7 @@ dso_timelapse = AllskyVideo(
             username=os.getenv('ftp_get_user'),
             password=os.getenv('ftp_get_pwd'))
 
-cams = [dso_camera, lpp, smv, hlt, dso_timelapse]
+cams = [dso_camera, lpp, smv, hlt, stuck, dso_timelapse]
 
 def handle_cam(cam: Webcam):
     try:
