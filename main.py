@@ -17,6 +17,17 @@ from Webcam import Webcam, Logo
 
 load_dotenv('environment.env')
 
+depot = Webcam(name='depot',
+            file_name_on_server='depot.jpg',
+            username=os.getenv('ftp_get_user'),
+            password=os.getenv('ftp_get_pwd'),
+            logo_placements=[
+                Logo(
+                    place=(0,0),
+                    size=(1,1),
+                    cover_date=False)
+            ])
+
 dso_camera = Webcam(name='dark_sky',
             file_name_on_server='stmaryallsky-resize.jpg',
             username=os.getenv('ftp_get_user'),
@@ -107,7 +118,7 @@ dso_timelapse = AllskyVideo(
             username=os.getenv('ftp_get_user'),
             password=os.getenv('ftp_get_pwd'))
 
-cams = [dso_camera, lpp, smv, hlt, stuck, dso_timelapse]
+cams = [depot, dso_camera, lpp, smv, hlt, stuck, dso_timelapse]
 
 def handle_cam(cam: Webcam):
     try:
