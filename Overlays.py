@@ -5,6 +5,7 @@ Overlay classes for webcam image processing.
 import io
 import os
 from abc import ABC, abstractmethod
+import random
 import requests
 
 from dotenv import load_dotenv
@@ -108,7 +109,8 @@ class Temperature(Overlay):
                 'Cache-Control': 'max-age=0'
             }
 
-            response = requests.get(self.endpoint, headers=headers, timeout=10)
+            endpoint_cachebust = f'{self.endpoint}?rand={random.randint(1000, 9999)}'
+            response = requests.get(endpoint_cachebust, headers=headers, timeout=10)
             response.raise_for_status()
             # Endpoint returns plaintext response
             temperature_raw = response.text.strip()
