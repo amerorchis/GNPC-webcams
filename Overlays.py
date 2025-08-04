@@ -222,7 +222,8 @@ class LogoWithTemperature(Overlay):
                 'Cache-Control': 'max-age=0'
             }
 
-            response = requests.get(self.temp_endpoint, headers=headers, timeout=10)
+            endpoint_cachebust = f'{self.temp_endpoint}?rand={random.randint(1000, 9999)}'
+            response = requests.get(endpoint_cachebust, headers=headers, timeout=10)
             response.raise_for_status()
             # Endpoint returns plaintext response
             temperature_raw = response.text.strip()
