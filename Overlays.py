@@ -230,10 +230,10 @@ class LogoWithTemperature(Overlay):
             if temperature_raw and temperature_raw != "N/A":
                 return f"{temperature_raw} °F"
             else:
-                return "N/A"
+                return ""
         except requests.RequestException as e:
             print(f"Error fetching temperature: {e}")
-            return "N/A"
+            return ""
     
     def _load_temp_bold_font(self):
         """Load font directly from the specified font path."""
