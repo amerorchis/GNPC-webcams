@@ -117,10 +117,10 @@ class Temperature(Overlay):
             if temperature_raw and temperature_raw != "N/A":
                 return f"{temperature_raw} °F"
             else:
-                return "N/A"
+                return ""
         except requests.RequestException as e:
             print(f"Error fetching temperature: {e}")
-            return "N/A"
+            return ""
     
     def _load_bold_font(self):
         """Load font directly from the specified font path."""
@@ -242,7 +242,7 @@ class LogoWithTemperature(Overlay):
         except (OSError, IOError):
             # Fallback to default font if file not found
             return ImageFont.load_default()
-    
+
     def _calculate_temp_place(self, img_width, img_height):
         """Calculate the position for the temperature overlay."""
         if self.temp_place is False:
