@@ -62,7 +62,7 @@ lpp = Webcam(name='lpp',
                     temp_bg_color=(37, 43, 75),
                     temp_bg_size=(175, 66),
                     temp_text_color=(173, 177, 225),
-                    temp_place=(0, 60)
+                    temp_place=(0, 54)
                 ),
                 LogoWithTemperature(
                     place=(0, 1400),
@@ -75,7 +75,7 @@ lpp = Webcam(name='lpp',
                     temp_bg_color=(37, 43, 75),
                     temp_bg_size=(175, 66),
                     temp_text_color=(173, 177, 225),
-                    temp_place=(0, 60)
+                    temp_place=(0, 54)
                 ),
             ])
 
@@ -107,7 +107,8 @@ smv = Webcam(name='smv',
                     temp_font_size=38,
                     temp_bg_color=(0, 0, 0, 64),
                     temp_bg_size=(175, 44),
-                    temp_text_color=(255, 255, 255)
+                    temp_text_color=(255, 255, 255),
+                    temp_place=(0, 1639)
                 ),
             ])
 
