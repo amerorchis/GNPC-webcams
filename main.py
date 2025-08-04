@@ -50,16 +50,32 @@ lpp = Webcam(name='lpp',
             username=os.getenv('ftp_get_user'),
             password=os.getenv('ftp_get_pwd'),
             logo_placements=[
-                Logo(
+                LogoWithTemperature(
                     place=(1507,10),
                     size=(531,88),
                     img='logo.png',
-                    subname='nps'
+                    subname='nps',
+                    cover_date=False,
+                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
+                    temp_font_path="Tahoma.ttf",
+                    temp_font_size=42,
+                    temp_bg_color=(37, 43, 75),
+                    temp_bg_size=(175, 66),
+                    temp_text_color=(173, 177, 225),
+                    temp_place=(0, 60)
                 ),
-                Logo(
+                LogoWithTemperature(
                     place=(0, 1400),
                     size=(612,137),
                     img='logo-shaded.png',
+                    cover_date=False,
+                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
+                    temp_font_path="Tahoma.ttf",
+                    temp_font_size=42,
+                    temp_bg_color=(37, 43, 75),
+                    temp_bg_size=(175, 66),
+                    temp_text_color=(173, 177, 225),
+                    temp_place=(0, 60)
                 ),
             ])
 

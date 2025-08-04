@@ -188,7 +188,7 @@ class LogoWithTemperature(Overlay):
     
     def __init__(self, place, size, img='logo-shaded.png', subname=None, cover_date=False, 
                  temp_endpoint="https://glacier.org/scripts/post_temp.cgi", temp_font_path="SourceSansVariable-Bold.ttf", 
-                 temp_font_size=38, temp_bg_color=(0, 0, 0, 64), temp_bg_size=(175, 44), temp_text_color=(255, 255, 255)):
+                 temp_font_size=38, temp_bg_color=(0, 0, 0, 64), temp_bg_size=(175, 44), temp_text_color=(255, 255, 255), temp_place=False):
         super().__init__(place, size, subname)
         # Logo properties
         self.logo_img = img
@@ -200,7 +200,8 @@ class LogoWithTemperature(Overlay):
         self.temp_bg_color = temp_bg_color
         self.temp_bg_size = temp_bg_size
         self.temp_text_color = temp_text_color
-    
+        self.temp_place = temp_place
+
     def _fetch_temperature(self):
         """Fetch temperature from the endpoint."""
         try:
@@ -239,6 +240,16 @@ class LogoWithTemperature(Overlay):
             # Fallback to default font if file not found
             return ImageFont.load_default()
     
+    def _calculate_temp_place(self, img_width, img_height):
+        """Calculate the position for the temperature overlay."""
+        if self.temp_place is False:
+            # Default to top-right corner
+            return (img_width - self.temp_bg_size[0], 0)
+        elif isinstance(self.temp_place, tuple):
+            return self.temp_place
+        else:
+            raise ValueError("temp_place must be a tuple or False")
+
     def add_overlay(self, image, mod_time_str=''):
         """Apply both logo and temperature overlays to the image."""
         # Open the images
@@ -266,22 +277,22 @@ class LogoWithTemperature(Overlay):
             text_color = (255, 255, 255)
             draw.text(text_position, mod_time_str, font=font, fill=text_color)
 
-        # Add temperature overlay at top-right
+        # Add temperature overlay at designated place
         img_width, img_height = webcam_with_overlays.size
-        temp_place = (img_width - self.temp_bg_size[0], 0)
-        
+        temp_place = self._calculate_temp_place(img_width, img_height)
+
         # Fetch temperature data
         temperature_text = self._fetch_temperature()
-        
+
         # Load font
         try:
             temp_font = self._load_temp_bold_font()
         except (OSError, IOError):
             temp_font = ImageFont.load_default()
-        
+
         # Create temperature background
         temp_background = Image.new('RGBA', self.temp_bg_size, self.temp_bg_color)
-        
+
         # Create temperature text overlay
         temp_text_overlay = Image.new('RGBA', self.temp_bg_size, (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp_text_overlay)
@@ -297,10 +308,10 @@ class LogoWithTemperature(Overlay):
         
         # Draw temperature text
         temp_draw.text((text_x, text_y), temperature_text, font=temp_font, fill=self.temp_text_color)
-        
+
         # Composite temperature background and text
         temp_final = Image.alpha_composite(temp_background, temp_text_overlay)
-        
+
         # Paste temperature overlay onto the image
         webcam_with_overlays.paste(temp_final, temp_place, temp_final)
 
