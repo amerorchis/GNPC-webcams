@@ -121,7 +121,7 @@ class Temperature(Overlay):
         except requests.RequestException as e:
             print(f"Error fetching temperature: {e}")
             return ""
-    
+
     def _load_bold_font(self):
         """Load font directly from the specified font path."""
         try:
@@ -315,8 +315,9 @@ class LogoWithTemperature(Overlay):
         # Composite temperature background and text
         temp_final = Image.alpha_composite(temp_background, temp_text_overlay)
 
-        # Paste temperature overlay onto the image
-        webcam_with_overlays.paste(temp_final, temp_place, temp_final)
+        # Paste temperature overlay onto the image if there is a temperature to display
+        if temperature_text:
+            webcam_with_overlays.paste(temp_final, temp_place, temp_final)
 
         # Save final file with both overlays
         webcam_with_overlays.save(self.overlayed, format="JPEG")
