@@ -96,7 +96,7 @@ smv = Webcam(name='smv',
                     temp_bg_color=(0, 0, 0, 64),
                     temp_bg_size=(175, 44),
                     temp_text_color=(255, 255, 255),
-                    temp_place=(0, 1639)
+                    temp_place=(1639, 0)
                 ),
                 LogoWithTemperature(
                     place=(0,944),
