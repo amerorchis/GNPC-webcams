@@ -13,7 +13,8 @@ from time import sleep
 from dotenv import load_dotenv
 
 from AllskyVideo import AllskyVideo
-from Webcam import Webcam, Logo
+from Webcam import Webcam
+from Overlays import Logo, Temperature, Overlay, LogoWithTemperature
 
 load_dotenv('environment.env')
 
@@ -66,17 +67,31 @@ smv = Webcam(name='smv',
             file_name_on_server='smv.jpg',
             username=os.getenv('ftp_get_user'),
             password=os.getenv('ftp_get_pwd'),
-            logo_placements=[
-                Logo(
+            overlays=[
+                LogoWithTemperature(
                     place=(140,944),
                     size=(612,137),
                     img='logo-shaded.png',
-                    subname='nps'
+                    subname='nps',
+                    cover_date=False,
+                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
+                    temp_font_path="SourceSansVariable-Bold.ttf",
+                    temp_font_size=38,
+                    temp_bg_color=(0, 0, 0, 64),
+                    temp_bg_size=(175, 44),
+                    temp_text_color=(255, 255, 255)
                 ),
-                Logo(
+                LogoWithTemperature(
                     place=(0,944),
                     size=(612,137),
                     img='logo-shaded.png',
+                    cover_date=False,
+                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
+                    temp_font_path="SourceSansVariable-Bold.ttf",
+                    temp_font_size=38,
+                    temp_bg_color=(0, 0, 0, 64),
+                    temp_bg_size=(175, 44),
+                    temp_text_color=(255, 255, 255)
                 ),
             ])
 
