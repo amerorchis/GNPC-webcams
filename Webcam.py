@@ -67,9 +67,7 @@ class Webcam:
             # If it's not there, wait 6 seconds and try again
             except error_perm as e:
                 if str(e).startswith('550'):
-                    # Use INFO level for AllskyVideo since it's expected to be missing most of the time
-                    log_level = logger.info if self.__class__.__name__ == 'AllskyVideo' else logger.warning
-                    log_level(f"  {self.name}: File not found, waiting 6 seconds...")
+                    logger.info(f"  {self.name}: File not found, waiting 6 seconds...")
                     sleep(6)
                     try:
                         download_attempt()
