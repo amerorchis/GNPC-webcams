@@ -130,9 +130,9 @@ def create_overlay_from_config(overlay_config: Union[LogoConfig, TemperatureConf
             subname=overlay_config.subname,
             font_path=overlay_config.font_path,
             font_size=overlay_config.font_size,
-            bg_color=overlay_config.bg_color,
+            bg_color=tuple(overlay_config.bg_color),
             bg_size=overlay_config.bg_size,
-            text_color=overlay_config.text_color
+            text_color=tuple(overlay_config.text_color)
         )
     else:
         raise ValueError(f"Unknown overlay config type: {type(overlay_config)}")
