@@ -1,21 +1,79 @@
 # GNPC Webcams Operation
 
-The Dusty Star Observatory webcam in St. Mary and the 3 Logan Pass webcams upload photos every minute and a video timelapse once a day (from the observatory) to the glacier.org FTP server.
+Automated webcam image and video processing system for the Glacier National Park Conservancy. Downloads webcam images from glacier.org FTP, applies GNPC logos with custom positioning, adds professional timestamps, and uploads processed images to an HTML server for public viewing.
 
-## Photos
+## Architecture
 
-Twice a minute, this program grabs the image in the FTP folder, adds the GNPC logo, covers the ugly timestamp, adds a nicer looking timestamp, and uploads the new photo to the HTML server.
+The system consists of five main classes:
 
-The Logo object defines a logo placement. This is necessary because the NPS and glacier.org websites crop the images differently.
+- **`Webcam`** - Main image processing class handling FTP download, logo application, timestamp overlay, and upload
+- **`Logo`** - Encapsulates logo placement configuration with custom positioning and sizing  
+- **`Temperature`** - Fetches and overlays temperature data with customizable styling
+- **`CompositeOverlay`** - Combines multiple overlays (logo + temperature) into single composite images
+- **`AllskyVideo`** - Inherits from Webcam for overnight timelapse video processing using FFmpeg
 
-## Video
+## Configuration
 
-Once a day the timelapse video is grabbed and a logo is added to it, then it is uploaded to the HTML server and deleted from FTP. Video is deleted because it only changes once a day and we don't want to keep uploading it. Photos are not deleted from FTP because within a minute they will be overwritten anyways.
+All webcam configurations are defined in `webcams.yaml` using dataclasses for type safety:
+
+```yaml
+webcams:
+  - name: lpp
+    file_name_on_server: lpp.jpg
+    logo_placements:
+      # Composite overlay: logo + temperature
+      - - type: logo
+          place: [1507, 10]
+          size: [531, 88]
+          img: overlays/logo.png
+          subname: nps
+        - type: temperature
+          place: [0, 54]
+          size: [175, 66]
+          endpoint: "https://glacier.org/scripts/post_temp.cgi"
+          subname: nps
+```
+
+### Overlay Types
+
+- **Single overlays**: Apply one logo or temperature overlay
+- **Composite overlays**: Apply multiple overlays in sequence to create combined images
+- **Auto-positioning**: Temperature overlays can auto-position to top-right corner
+
+## Environment Setup
+
+1. Copy `template.env` to `environment.env` and configure:
+   - FTP credentials for glacier.org server
+   - HTML server upload credentials  
+   - `LOG_LEVEL=INFO` for development, `LOG_LEVEL=WARN` for production
+
+2. Install dependencies:
+   ```bash
+   uv sync
+   ```
+
+3. Ensure FFmpeg is installed system-wide for video processing
 
 ## Operation
 
-Clone the repo into the device that will run it.
+**Development:**
+```bash
+python main.py
+```
 
-Add your environment file with the required passwords.
+**Production (cron):**
+```bash
+* * * * * cd /path/to/GNPC-webcams && ./main.py
+```
 
-Run with cron every minute like: '\* \* \* \* \* cd ~/Modules/darksky-cam && ./main.py'
+The system processes 6 webcam instances using threading for parallel processing, with automatic retry logic for FTP operations and comprehensive logging.
+
+## File Structure
+
+```
+overlays/          # Logo images and graphics
+fonts/             # Font files for timestamp rendering
+webcams.yaml       # All webcam and overlay configurations
+config.py          # Configuration dataclasses and YAML loading
+environment.env    # Credentials and settings (not in repo)
+```
