@@ -63,7 +63,7 @@ class AllskyVideo(Webcam):
 
         # Set up the input and output streams
         input_stream = ffmpeg.input('allsky.mp4')
-        logo_stream = ffmpeg.input('logo-shaded-video.png')
+        logo_stream = ffmpeg.input('overlays/logo-shaded-video.png')
         output_stream = ffmpeg.output(
             input_stream.overlay(logo_stream, x=self.logo_place[0], y=self.logo_place[1]),
             'allsky-logo.mp4',

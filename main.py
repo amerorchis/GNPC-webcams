@@ -6,157 +6,43 @@ from the glacier.org FTP server to HTML server.
 """
 
 import os
+import logging
 import threading
 import traceback
 from time import sleep
 
 from dotenv import load_dotenv
 
-from AllskyVideo import AllskyVideo
-from Webcam import Webcam
-from Overlays import Logo, Temperature, Overlay, LogoWithTemperature
-
 load_dotenv('environment.env')
 
-depot = Webcam(name='depot',
-            file_name_on_server='depot.jpg',
-            username=os.getenv('ftp_get_user'),
-            password=os.getenv('ftp_get_pwd'),
-            logo_placements=[
-                Logo(
-                    place=(0,0),
-                    size=(1,1),
-                    cover_date=False)
-            ])
+# Configure logging with environment-based level
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, log_level),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
-dso_camera = Webcam(name='dark_sky',
-            file_name_on_server='stmaryallsky-resize.jpg',
-            username=os.getenv('ftp_get_user'),
-            password=os.getenv('ftp_get_pwd'),
-            logo_placements=[
-                Logo(
-                    place=(0,604),
-                    size=(299,68),
-                    subname='nps',
-                    cover_date=True),
-                Logo(
-                    place=(0,619),
-                    size=(299,68),
-                    cover_date=True)
-            ])
+from config import load_config, create_webcam_from_config, create_allsky_video_from_config
+from Webcam import Webcam
 
-lpp = Webcam(name='lpp',
-            file_name_on_server='lpp.jpg',
-            username=os.getenv('ftp_get_user'),
-            password=os.getenv('ftp_get_pwd'),
-            logo_placements=[
-                LogoWithTemperature(
-                    place=(1507,10),
-                    size=(531,88),
-                    img='logo.png',
-                    subname='nps',
-                    cover_date=False,
-                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
-                    temp_font_path="Tahoma.ttf",
-                    temp_font_size=42,
-                    temp_bg_color=(28, 34, 68),
-                    temp_bg_size=(175, 66),
-                    temp_text_color=(173, 177, 225),
-                    temp_place=(0, 54)
-                ),
-                LogoWithTemperature(
-                    place=(0, 1400),
-                    size=(612,137),
-                    img='logo-shaded.png',
-                    cover_date=False,
-                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
-                    temp_font_path="Tahoma.ttf",
-                    temp_font_size=42,
-                    temp_bg_color=(28, 34, 68),
-                    temp_bg_size=(175, 66),
-                    temp_text_color=(173, 177, 225),
-                    temp_place=(0, 54)
-                ),
-            ])
+# Load configuration from YAML
+app_config = load_config('webcams.yaml')
 
-smv = Webcam(name='smv',
-            file_name_on_server='smv.jpg',
-            username=os.getenv('ftp_get_user'),
-            password=os.getenv('ftp_get_pwd'),
-            overlays=[
-                LogoWithTemperature(
-                    place=(140,944),
-                    size=(612,137),
-                    img='logo-shaded.png',
-                    subname='nps',
-                    cover_date=False,
-                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
-                    temp_font_path="SourceSansVariable-Bold.ttf",
-                    temp_font_size=38,
-                    temp_bg_color=(0, 0, 0, 64),
-                    temp_bg_size=(175, 44),
-                    temp_text_color=(255, 255, 255),
-                    temp_place=(1600, 0)
-                ),
-                LogoWithTemperature(
-                    place=(0,944),
-                    size=(612,137),
-                    img='logo-shaded.png',
-                    cover_date=False,
-                    temp_endpoint="https://glacier.org/scripts/post_temp.cgi",
-                    temp_font_path="SourceSansVariable-Bold.ttf",
-                    temp_font_size=38,
-                    temp_bg_color=(0, 0, 0, 64),
-                    temp_bg_size=(175, 44),
-                    temp_text_color=(255, 255, 255)
-                ),
-            ])
+# Create webcam objects from configuration
+webcams = [create_webcam_from_config(webcam_config) for webcam_config in app_config.webcams]
+allsky_videos = [create_allsky_video_from_config(video_config) for video_config in app_config.allsky_videos]
 
-hlt = Webcam(name='hlt',
-            file_name_on_server='hlt.jpg',
-            username=os.getenv('ftp_get_user'),
-            password=os.getenv('ftp_get_pwd'),
-            logo_placements=[
-                Logo(
-                    place=(140,944),
-                    size=(612,137),
-                    img='logo-shaded.png',
-                    subname='nps'
-                ),
-                Logo(
-                    place=(0,944),
-                    size=(612,137),
-                    img='logo-shaded.png',
-                ),
-            ])
-
-stuck = Webcam(name='stuck',
-            file_name_on_server='stuck.jpg',
-            username=os.getenv('ftp_get_user'),
-            password=os.getenv('ftp_get_pwd'),
-            logo_placements=[
-                Logo(
-                    place=(0,944),
-                    size=(612,137),
-                    img='logo-shaded.png',
-                ),
-            ])
-
-dso_timelapse = AllskyVideo(
-            name='allsky',
-            file_name_on_server='allsky.mp4',
-            logo_place=(0,619),
-            logo_size=(299,68),
-            username=os.getenv('ftp_get_user'),
-            password=os.getenv('ftp_get_pwd'))
-
-cams = [depot, dso_camera, lpp, smv, hlt, stuck, dso_timelapse]
+# Combine all cameras
+cams = webcams + allsky_videos
 
 def handle_cam(cam: Webcam):
     try:
-        cam.get()
-        cam.add_logo()
+        logger.info(f"Starting processing for {cam.name}...")
+        cam.process()
         cam.upload_image()
+        logger.info(f"Completed {cam.name}")
 
     except Exception:
         return f'{cam.name} failed. {traceback.format_exc()}'

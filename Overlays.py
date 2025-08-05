@@ -33,7 +33,7 @@ class Overlay(ABC):
         return self.overlayed, name
 
 class Logo(Overlay):
-    def __init__(self, place, size, img='logo-shaded.png', subname=None, cover_date=False):
+    def __init__(self, place, size, img='overlays/logo-shaded.png', subname=None, cover_date=False):
         super().__init__(place, size, subname)
         self.logo_img = img
         self.cover_date = cover_date
@@ -54,12 +54,12 @@ class Logo(Overlay):
 
         # Cover old datetime
         if self.cover_date:
-            corner_rectangle = Image.open('corner-rectangle.png')
+            corner_rectangle = Image.open('overlays/corner-rectangle.png')
             webcam_and_logo.paste(corner_rectangle, None)
 
             # Add datetime
             draw = ImageDraw.Draw(webcam_and_logo)
-            font = ImageFont.truetype("OpenSans-Bold.ttf", 16)
+            font = ImageFont.truetype("fonts/OpenSans-Bold.ttf", 16)
             text_position = (4, 3)
             text_color = (255, 255, 255)
             draw.text(text_position, mod_time_str, font=font, fill=text_color)
@@ -79,7 +79,7 @@ class Logo(Overlay):
 class Temperature(Overlay):
     """Temperature overlay that fetches temperature data from an endpoint."""
     
-    def __init__(self, place=None, size=(175, 44), endpoint="https://glacier.org/scripts/post_temp.cgi", subname=None, font_path="SourceSansVariable-Bold.ttf", 
+    def __init__(self, place=None, size=(175, 44), endpoint="https://glacier.org/scripts/post_temp.cgi", subname=None, font_path="fonts/SourceSansVariable-Bold.ttf", 
                  font_size=38, bg_color=(0, 0, 0, 64), bg_size=(175, 44), text_color=(255, 255, 255)):
         # If place is not provided, it will be calculated in add_overlay based on image dimensions
         super().__init__(place or (0, 0), size, subname)  # Use (0,0) temporarily if place is None
@@ -185,148 +185,40 @@ class Temperature(Overlay):
         webcam_with_temp.save(self.overlayed, format="JPEG")
         self.overlayed.seek(0)
 
-class LogoWithTemperature(Overlay):
-    """Composite overlay that combines logo and temperature."""
+class CompositeOverlay(Overlay):
+    """Composite overlay that applies multiple overlays sequentially to create a single output image."""
     
-    def __init__(self, place, size, img='logo-shaded.png', subname=None, cover_date=False, 
-                 temp_endpoint="https://glacier.org/scripts/post_temp.cgi", temp_font_path="SourceSansVariable-Bold.ttf", 
-                 temp_font_size=38, temp_bg_color=(0, 0, 0, 64), temp_bg_size=(175, 44), temp_text_color=(255, 255, 255), temp_place=False):
-        super().__init__(place, size, subname)
-        # Logo properties
-        self.logo_img = img
-        self.cover_date = cover_date
-        # Temperature properties
-        self.temp_endpoint = temp_endpoint
-        self.temp_font_path = temp_font_path
-        self.temp_font_size = temp_font_size
-        self.temp_bg_color = temp_bg_color
-        self.temp_bg_size = temp_bg_size
-        self.temp_text_color = temp_text_color
-        self.temp_place = temp_place
-
-    def _fetch_temperature(self):
-        """Fetch temperature from the endpoint."""
-        try:
-            # Headers to mimic a browser request
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0'
-            }
-
-            endpoint_cachebust = f'{self.temp_endpoint}?rand={random.randint(1000, 9999)}'
-            response = requests.get(endpoint_cachebust, headers=headers, timeout=10)
-            response.raise_for_status()
-            # Endpoint returns plaintext response
-            temperature_raw = response.text.strip()
-            if temperature_raw and temperature_raw != "N/A":
-                return f"{temperature_raw} °F"
-            else:
-                return ""
-        except requests.RequestException as e:
-            print(f"Error fetching temperature: {e}")
-            return ""
+    def __init__(self, overlays, subname=None):
+        # Use the first overlay's subname if no composite subname provided
+        if subname is None and overlays:
+            subname = getattr(overlays[0], 'subname', None)
+        
+        super().__init__(place=(0, 0), size=(0, 0), subname=subname)
+        self.overlays = overlays
     
-    def _load_temp_bold_font(self):
-        """Load font directly from the specified font path."""
-        try:
-            return ImageFont.truetype(self.temp_font_path, self.temp_font_size)
-        except (OSError, IOError):
-            # Fallback to default font if file not found
-            return ImageFont.load_default()
-
-    def _calculate_temp_place(self, img_width, img_height):
-        """Calculate the position for the temperature overlay."""
-        if self.temp_place is False:
-            # Default to top-right corner
-            return (img_width - self.temp_bg_size[0], 0)
-        elif isinstance(self.temp_place, tuple):
-            return self.temp_place
-        else:
-            raise ValueError("temp_place must be a tuple or False")
-
     def add_overlay(self, image, mod_time_str=''):
-        """Apply both logo and temperature overlays to the image."""
-        # Open the images
-        logo = Image.open(self.logo_img)
-        webcam = Image.open(image)
-
-        # Resize logo
-        logo = logo.resize(self.size)
-
-        # Create a copy of image
-        webcam_with_overlays = webcam.copy()
-
-        # Paste logo onto cam at the specified location
-        webcam_with_overlays.paste(logo, self.place, logo)
-
-        # Cover old datetime if requested
-        if self.cover_date:
-            corner_rectangle = Image.open('corner-rectangle.png')
-            webcam_with_overlays.paste(corner_rectangle, None)
-
-            # Add datetime
-            draw = ImageDraw.Draw(webcam_with_overlays)
-            font = ImageFont.truetype("OpenSans-Bold.ttf", 16)
-            text_position = (4, 3)
-            text_color = (255, 255, 255)
-            draw.text(text_position, mod_time_str, font=font, fill=text_color)
-
-        # Add temperature overlay at designated place
-        img_width, img_height = webcam_with_overlays.size
-        temp_place = self._calculate_temp_place(img_width, img_height)
-
-        # Fetch temperature data
-        temperature_text = self._fetch_temperature()
-
-        # Load font
-        try:
-            temp_font = self._load_temp_bold_font()
-        except (OSError, IOError):
-            temp_font = ImageFont.load_default()
-
-        # Create temperature background
-        temp_background = Image.new('RGBA', self.temp_bg_size, self.temp_bg_color)
-
-        # Create temperature text overlay
-        temp_text_overlay = Image.new('RGBA', self.temp_bg_size, (0, 0, 0, 0))
-        temp_draw = ImageDraw.Draw(temp_text_overlay)
+        """Apply all overlays sequentially to create a composite image."""
+        # Start with the original image
+        current_image = image
         
-        # Calculate text dimensions to center it
-        text_bbox = temp_draw.textbbox((0, 0), temperature_text, font=temp_font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
+        # Apply each overlay in sequence
+        for i, overlay in enumerate(self.overlays):
+            # For the first overlay, use the original image buffer
+            if i == 0:
+                overlay.add_overlay(current_image, mod_time_str)
+            else:
+                # For subsequent overlays, use the previous overlay's output as input
+                previous_overlay = self.overlays[i-1]
+                previous_overlay.overlayed.seek(0)  # Reset to beginning
+                overlay.add_overlay(previous_overlay.overlayed, mod_time_str)
+            
+            # The current processed image is now in this overlay's buffer
+            current_image = overlay.overlayed
         
-        # Center text horizontally, shift up vertically
-        text_x = (self.temp_bg_size[0] - text_width) // 2
-        text_y = (self.temp_bg_size[1] - text_height) // 2 - 10
-        
-        # Draw temperature text
-        temp_draw.text((text_x, text_y), temperature_text, font=temp_font, fill=self.temp_text_color)
+        # Copy the final result to our own buffer
+        if self.overlays:
+            final_overlay = self.overlays[-1]
+            final_overlay.overlayed.seek(0)
+            self.overlayed.write(final_overlay.overlayed.read())
+            self.overlayed.seek(0)
 
-        # Composite temperature background and text
-        temp_final = Image.alpha_composite(temp_background, temp_text_overlay)
-
-        # Paste temperature overlay onto the image if there is a temperature to display
-        if temperature_text:
-            webcam_with_overlays.paste(temp_final, temp_place, temp_final)
-
-        # Save final file with both overlays
-        webcam_with_overlays.save(self.overlayed, format="JPEG")
-        self.overlayed.seek(0)
-    
-    def add_logo(self, image, mod_time_str=''):
-        """Backward compatibility method."""
-        return self.add_overlay(image, mod_time_str)
-    
-    def get_logoed_img(self, name):
-        """Backward compatibility method."""
-        return self.get_overlayed_img(name)
