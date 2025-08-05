@@ -157,7 +157,7 @@ class Temperature(Overlay):
         actual_bg_size = self.bg_size
 
         # Create background rectangle
-        background = Image.new('RGBA', actual_bg_size, self.bg_color)
+        background = Image.new('RGBA', actual_bg_size, tuple(self.bg_color))
 
         # Create text overlay
         text_overlay = Image.new('RGBA', actual_bg_size, (0, 0, 0, 0))
