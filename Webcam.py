@@ -149,7 +149,7 @@ class Webcam:
                 # Check if it's a truncated image error
                 if "image file is truncated" in str(e).lower() or "broken data stream" in str(e).lower():
                     if attempt < max_retries - 1:  # Not the last attempt
-                        logger.warning(f"{self.name}: Truncated image detected (attempt {attempt + 1}), retrying in {retry_delay}s...")
+                        logger.info(f"{self.name}: Truncated image detected (attempt {attempt + 1}), retrying in {retry_delay}s...")
                         sleep(retry_delay)
                         continue
                     else:
