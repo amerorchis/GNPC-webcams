@@ -5,23 +5,16 @@ Controls the operation of the program to add logos to and upload webcam photos a
 from the glacier.org FTP server to HTML server.
 """
 
-import os
 import logging
 import threading
 import traceback
 from time import sleep
 
 from dotenv import load_dotenv
+from logging_config import setup_logging
 
 load_dotenv('environment.env')
-
-# Configure logging with environment-based level
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(
-    level=getattr(logging, log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 from config import load_config, create_webcam_from_config, create_allsky_video_from_config
