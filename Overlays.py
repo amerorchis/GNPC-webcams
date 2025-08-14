@@ -129,30 +129,30 @@ class Temperature(Overlay):
         except (OSError, IOError):
             # Fallback to default font if file not found
             return ImageFont.load_default()
-    
+
     def add_overlay(self, image, mod_time_str=''):
         """Add temperature overlay to the image."""
         # Open the webcam image
         webcam = Image.open(image)
-        
+
         # Create a copy of the image
         webcam_with_temp = webcam.copy()
-        
+
         # Calculate position if auto-positioning is enabled
         if self.place_auto:
             img_width, img_height = webcam.size
             # Position so top-right corner of overlay is at top-right corner of image
             self.place = (img_width - self.bg_size[0], 0)
-        
+
         # Fetch temperature data
         temperature_text = self.fetch_temperature()
-        
+
         # Load font with bold weight if possible
         try:
             font = self._load_bold_font()
         except (OSError, IOError):
             font = ImageFont.load_default()
-        
+
         # Use fixed background size
         actual_bg_size = self.bg_size
 
@@ -171,36 +171,36 @@ class Temperature(Overlay):
         # Center text horizontally, shift up vertically
         text_x = (actual_bg_size[0] - text_width) // 2
         text_y = (actual_bg_size[1] - text_height) // 2 - 10
-        
+
         # Draw text on the text overlay
         draw.text((text_x, text_y), temperature_text, font=font, fill=self.text_color)
-        
+
         # Composite background and text
         final_overlay = Image.alpha_composite(background, text_overlay)
-        
+
         # Paste the temperature overlay onto the webcam image
         webcam_with_temp.paste(final_overlay, self.place, final_overlay)
-        
+
         # Save the overlayed file
         webcam_with_temp.save(self.overlayed, format="JPEG")
         self.overlayed.seek(0)
 
 class CompositeOverlay(Overlay):
     """Composite overlay that applies multiple overlays sequentially to create a single output image."""
-    
+
     def __init__(self, overlays, subname=None):
         # Use the first overlay's subname if no composite subname provided
         if subname is None and overlays:
             subname = getattr(overlays[0], 'subname', None)
-        
+
         super().__init__(place=(0, 0), size=(0, 0), subname=subname)
         self.overlays = overlays
-    
+
     def add_overlay(self, image, mod_time_str=''):
         """Apply all overlays sequentially to create a composite image."""
         # Start with the original image
         current_image = image
-        
+
         # Apply each overlay in sequence
         for i, overlay in enumerate(self.overlays):
             # For the first overlay, use the original image buffer
@@ -211,10 +211,10 @@ class CompositeOverlay(Overlay):
                 previous_overlay = self.overlays[i-1]
                 previous_overlay.overlayed.seek(0)  # Reset to beginning
                 overlay.add_overlay(previous_overlay.overlayed, mod_time_str)
-            
+
             # The current processed image is now in this overlay's buffer
             current_image = overlay.overlayed
-        
+
         # Copy the final result to our own buffer
         if self.overlays:
             final_overlay = self.overlays[-1]
