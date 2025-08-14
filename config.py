@@ -138,8 +138,9 @@ def load_config(config_file: str = "webcams.yaml") -> AppConfig:
 
     config = AppConfig(webcams=webcams, allsky_videos=allsky_videos)
     logger.info(
-        f"Loaded configuration: {len(config.webcams)} webcams, "
-        f"{len(config.allsky_videos)} allsky videos"
+        "Loaded configuration: %d webcams, %d allsky videos",
+        len(config.webcams),
+        len(config.allsky_videos),
     )
 
     return config

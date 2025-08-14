@@ -39,6 +39,13 @@ class AllskyVideo(Webcam):
         self.upload = None
 
     def get(self):
+        """
+        Download overnight timelapse video from FTP server.
+
+        Checks if the video file exists on the server, downloads it to a buffer,
+        saves it to disk as 'allsky.mp4', and sets the modification time.
+        Sets self.available to True if video is found and downloaded successfully.
+        """
         # Connect to the FTP server
         ftp = FTP(os.getenv("server"))
         ftp.login(self.username, self.password)
@@ -65,6 +72,13 @@ class AllskyVideo(Webcam):
         ftp.quit()
 
     def add_logo(self):
+        """
+        Apply logo overlay to the downloaded video using FFmpeg.
+
+        Uses FFmpeg to overlay the logo-shaded-video.png onto the allsky.mp4
+        at the configured position and saves the result as 'allsky-logo.mp4'.
+        Only processes if self.available is True.
+        """
         if not self.available:
             return
 
