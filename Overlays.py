@@ -3,10 +3,10 @@ Overlay classes for webcam image processing.
 """
 
 import io
-from abc import ABC, abstractmethod
 import random
-import requests
+from abc import ABC, abstractmethod
 
+import requests
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
@@ -76,14 +76,6 @@ class Logo(Overlay):
         webcam_and_logo.save(self.overlayed, format="JPEG")
         self.overlayed.seek(0)
 
-    def add_logo(self, image, mod_time_str=""):
-        """Backward compatibility method."""
-        return self.add_overlay(image, mod_time_str)
-
-    def get_logoed_img(self, name):
-        """Backward compatibility method."""
-        return self.get_overlayed_img(name)
-
 
 class Temperature(Overlay):
     """Temperature overlay that fetches temperature data from an endpoint."""
@@ -100,7 +92,8 @@ class Temperature(Overlay):
         bg_size=(175, 44),
         text_color=(255, 255, 255),
     ):
-        # If place is not provided, it will be calculated in add_overlay based on image dimensions
+        # If place is not provided, it will be calculated in add_overlay
+        # based on image dimensions
         super().__init__(
             place or (0, 0), size, subname
         )  # Use (0,0) temporarily if place is None
@@ -117,8 +110,15 @@ class Temperature(Overlay):
         try:
             # Headers to mimic a browser request
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                    "image/avif,image/webp,image/apng,*/*;q=0.8"
+                ),
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept-Encoding": "gzip, deflate, br",
                 "DNT": "1",
@@ -153,6 +153,7 @@ class Temperature(Overlay):
 
     def add_overlay(self, image, mod_time_str=""):
         """Add temperature overlay to the image."""
+
         # Open the webcam image
         webcam = Image.open(image)
 
@@ -161,12 +162,15 @@ class Temperature(Overlay):
 
         # Calculate position if auto-positioning is enabled
         if self.place_auto:
-            img_width, img_height = webcam.size
+            img_width, _ = webcam.size
             # Position so top-right corner of overlay is at top-right corner of image
             self.place = (img_width - self.bg_size[0], 0)
 
         # Fetch temperature data
         temperature_text = self.fetch_temperature()
+
+        if not temperature_text:
+            return  # Stop if no temperature data is available
 
         # Load font with bold weight if possible
         try:
@@ -208,7 +212,10 @@ class Temperature(Overlay):
 
 
 class CompositeOverlay(Overlay):
-    """Composite overlay that applies multiple overlays sequentially to create a single output image."""
+    """
+    Composite overlay that applies multiple overlays sequentially
+    to create a single output image.
+    """
 
     def __init__(self, overlays, subname=None):
         # Use the first overlay's subname if no composite subname provided
