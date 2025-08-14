@@ -5,6 +5,7 @@ Custom class to represent an individual webcam.
 import io
 import logging
 import os
+import socket
 import threading
 from datetime import datetime, timedelta
 from ftplib import FTP, error_perm
@@ -49,40 +50,66 @@ class Webcam:
         self.mod_time_str = ""
         self.upload = []
 
-    def _download_image(self):
-        """Download image using shared FTP connection."""
+    def _download_image(self, max_retries=3, retry_delay=2):
+        """Download image using shared FTP connection with retry logic."""
         logger.debug(f"  {self.name}: Waiting for download lock...")
         with self._download_lock:
             logger.debug(f"  {self.name}: Got download lock, getting FTP connection...")
-            ftp = self._get_download_connection()
-            logger.debug(f"  {self.name}: Got FTP connection, starting download...")
 
             def download_attempt():
+                ftp = self._get_download_connection()
                 ftp.retrbinary(
                     f"RETR {self.file_name_on_server}", self.file_buffer.write
                 )
                 self.file_buffer.seek(0)
                 self._set_modification_time(ftp)
 
-            # Try to download the image
-            try:
-                download_attempt()
-                logger.debug(f"  {self.name}: Download successful")
-            # If it's not there, wait 6 seconds and try again
-            except error_perm as e:
-                if str(e).startswith("550"):
-                    logger.info(f"  {self.name}: File not found, waiting 6 seconds...")
-                    sleep(6)
-                    try:
-                        download_attempt()
-                        logger.debug(f"  {self.name}: Download successful on retry")
-                    # If it's still not there, raise an exception
-                    except error_perm as exc:
-                        raise FileNotFoundError(
-                            f"{self.name} wasn't found in the folder."
-                        ) from exc
-                else:
-                    raise
+            # Try to download the image with connection retry logic
+            for attempt in range(max_retries):
+                try:
+                    download_attempt()
+                    logger.debug(f"  {self.name}: Download successful")
+                    return  # Success - exit retry loop
+
+                except error_perm as e:
+                    if str(e).startswith("550"):
+                        logger.info(
+                            f"  {self.name}: File not found, waiting 6 seconds..."
+                        )
+                        sleep(6)
+                        try:
+                            download_attempt()
+                            logger.debug(f"  {self.name}: Download successful on retry")
+                            return  # Success - exit retry loop
+                        except error_perm as exc:
+                            raise FileNotFoundError(
+                                f"{self.name} wasn't found in the folder."
+                            ) from exc
+                    else:
+                        raise
+
+                except (
+                    BrokenPipeError,
+                    socket.error,
+                    ConnectionResetError,
+                    OSError,
+                ) as e:
+                    logger.warning(
+                        f"  {self.name}: Download failed (attempt {attempt + 1}): {e}"
+                    )
+                    # Reset connection on error
+                    self.__class__._download_ftp = None
+                    self.file_buffer = io.BytesIO()  # Reset buffer
+                    if attempt < max_retries - 1:
+                        logger.info(
+                            f"  {self.name}: Retrying download in {retry_delay}s..."
+                        )
+                        sleep(retry_delay)
+                    else:
+                        logger.error(
+                            f"  {self.name}: Download failed after {max_retries} tries"
+                        )
+                        raise
 
     def _apply_overlays(self):
         """Add all overlays to the image."""
@@ -94,14 +121,40 @@ class Webcam:
             overlay.add_overlay(self.file_buffer, self.mod_time_str)
         logger.debug(f"  {self.name}: Finished applying overlays")
 
-    def upload_image(self):
-        """Upload processed images using shared FTP connection."""
+    def upload_image(self, max_retries=3, retry_delay=2):
+        """Upload processed images using shared FTP connection with retry logic."""
         with self._upload_lock:
-            ftp = self._get_upload_connection()
 
             def upload_file(overlayed, file_name):
-                ftp.storbinary("STOR " + file_name, overlayed)
-                self.upload += [f"https://glacier.org/webcam/{file_name}"]
+                for attempt in range(max_retries):
+                    try:
+                        ftp = self._get_upload_connection()
+                        overlayed.seek(0)  # Reset buffer position
+                        ftp.storbinary("STOR " + file_name, overlayed)
+                        self.upload += [f"https://glacier.org/webcam/{file_name}"]
+                        return  # Success - exit retry loop
+                    except (
+                        BrokenPipeError,
+                        socket.error,
+                        ConnectionResetError,
+                        OSError,
+                    ) as e:
+                        logger.warning(
+                            f"  {self.name}: Upload failed for {file_name} "
+                            f"(attempt {attempt + 1}): {e}"
+                        )
+                        # Reset connection on error
+                        self.__class__._upload_ftp = None
+                        if attempt < max_retries - 1:
+                            logger.info(
+                                f"  {self.name}: Retrying upload in {retry_delay}s..."
+                            )
+                            sleep(retry_delay)
+                        else:
+                            logger.error(
+                                f"  {self.name}: Upload failed after {max_retries}x"
+                            )
+                            raise
 
             self._process_overlay_files(upload_file)
 
