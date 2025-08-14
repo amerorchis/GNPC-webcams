@@ -2,15 +2,16 @@
 Configuration dataclasses and YAML loading for GNPC webcams.
 """
 
-import os
-import yaml
 import logging
+import os
 from dataclasses import dataclass, field
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional, Tuple, Union
 
-from Webcam import Webcam
+import yaml
+
 from AllskyVideo import AllskyVideo
 from Overlays import Logo, Temperature
+from Webcam import Webcam
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,8 @@ def load_config(config_file: str = "webcams.yaml") -> AppConfig:
 
     config = AppConfig(webcams=webcams, allsky_videos=allsky_videos)
     logger.info(
-        f"Loaded configuration: {len(config.webcams)} webcams, {len(config.allsky_videos)} allsky videos"
+        f"Loaded configuration: {len(config.webcams)} webcams, "
+        f"{len(config.allsky_videos)} allsky videos"
     )
 
     return config

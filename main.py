@@ -1,8 +1,8 @@
 #! /usr/bin/python3
 
 """
-Controls the operation of the program to add logos to and upload webcam photos and videos
-from the glacier.org FTP server to HTML server.
+Controls the operation of the program to add logos to and upload webcam photos
+and videos from the glacier.org FTP server to HTML server.
 """
 
 import logging
@@ -11,6 +11,7 @@ import traceback
 from time import sleep
 
 from dotenv import load_dotenv
+
 from logging_config import setup_logging
 
 load_dotenv("environment.env")
@@ -18,9 +19,9 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 from config import (
-    load_config,
-    create_webcam_from_config,
     create_allsky_video_from_config,
+    create_webcam_from_config,
+    load_config,
 )
 from Webcam import Webcam
 

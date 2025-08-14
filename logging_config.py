@@ -3,8 +3,8 @@ Logging configuration module for GNPC webcam system.
 Handles environment-based logging setup for console or file output.
 """
 
-import os
 import logging
+import os
 
 
 def setup_logging():

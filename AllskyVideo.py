@@ -1,13 +1,15 @@
 """
-A class to represent the overnight timelapse video. Inherits from Webcam to maintain the same API.s
+A class to represent the overnight timelapse video.
+Inherits from Webcam to maintain the same API.s
 """
 
 import io
 import os
 from ftplib import FTP
 
-from dotenv import load_dotenv
 import ffmpeg
+from dotenv import load_dotenv
+
 from Webcam import Webcam
 
 load_dotenv("environment.env")
@@ -41,7 +43,8 @@ class AllskyVideo(Webcam):
         ftp = FTP(os.getenv("server"))
         ftp.login(self.username, self.password)
 
-        # Check if file is there, if it's not we don't need to do anything else with this
+        # Check if file is there, if it's not we don't need to do anything else
+        # with this
         # object on this round.
         if self.file_name_on_server not in ftp.nlst():
             return

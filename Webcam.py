@@ -3,13 +3,15 @@ Custom class to represent an individual webcam.
 """
 
 import io
-import os
 import logging
+import os
 import threading
-from time import sleep
-from ftplib import FTP, error_perm
 from datetime import datetime, timedelta
+from ftplib import FTP, error_perm
+from time import sleep
+
 from dotenv import load_dotenv
+
 from Overlays import CompositeOverlay
 
 logger = logging.getLogger(__name__)
@@ -160,13 +162,15 @@ class Webcam:
                 ):
                     if attempt < max_retries - 1:  # Not the last attempt
                         logger.info(
-                            f"{self.name}: Truncated image detected (attempt {attempt + 1}), retrying in {retry_delay}s..."
+                            f"{self.name}: Truncated image detected "
+                            f"(attempt {attempt + 1}), retrying in {retry_delay}s..."
                         )
                         sleep(retry_delay)
                         continue
                     else:
                         logger.error(
-                            f"{self.name}: Image still truncated after {max_retries} attempts"
+                            f"{self.name}: Image still truncated after "
+                            f"{max_retries} attempts"
                         )
                         raise
                 else:
@@ -175,7 +179,10 @@ class Webcam:
 
     @classmethod
     def _get_download_connection(cls):
-        """Get shared FTP connection for downloading images. Must be called with _download_lock held."""
+        """
+        Get shared FTP connection for downloading images.
+        Must be called with _download_lock held.
+        """
         if cls._download_ftp is None:
             logger.debug("    Creating new download FTP connection...")
             try:
@@ -197,7 +204,10 @@ class Webcam:
 
     @classmethod
     def _get_upload_connection(cls):
-        """Get shared FTP connection for uploading images. Must be called with _upload_lock held."""
+        """
+        Get shared FTP connection for uploading images.
+        Must be called with _upload_lock held.
+        """
         if cls._upload_ftp is None:
             try:
                 cls._upload_ftp = FTP(os.getenv("server"))
@@ -216,14 +226,14 @@ class Webcam:
             if cls._download_ftp:
                 try:
                     cls._download_ftp.quit()
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"    Failed to close download FTP connection: {e}")
                 cls._download_ftp = None
 
         with cls._upload_lock:
             if cls._upload_ftp:
                 try:
                     cls._upload_ftp.quit()
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"    Failed to close upload FTP connection: {e}")
                 cls._upload_ftp = None
