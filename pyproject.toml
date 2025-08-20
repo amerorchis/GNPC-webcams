@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = "==3.9.*"
 dependencies = [
-    "ffmpeg>=1.4",
+    "ffmpeg-python>=0.2.0",
     "fonttools>=4.59.0",
     "pillow>=11.3.0",
     "pre-commit>=4.3.0",
