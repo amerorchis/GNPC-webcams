@@ -12,6 +12,7 @@ from ftplib import FTP, error_perm
 from time import sleep
 
 from dotenv import load_dotenv
+from PIL import UnidentifiedImageError
 
 from Overlays import CompositeOverlay
 
@@ -207,22 +208,23 @@ class Webcam:
                 self._apply_overlays()
                 return  # Success - exit early
 
-            except OSError as e:
-                # Check if it's a truncated image error
+            except (OSError, UnidentifiedImageError) as e:
+                # Check if it's a truncated image error or unidentified image
                 if (
                     "image file is truncated" in str(e).lower()
                     or "broken data stream" in str(e).lower()
+                    or "cannot identify image file" in str(e).lower()
                 ):
                     if attempt < max_retries - 1:  # Not the last attempt
                         logger.info(
-                            f"{self.name}: Truncated image detected "
+                            f"{self.name}: Corrupted/truncated image detected "
                             f"(attempt {attempt + 1}), retrying in {retry_delay}s..."
                         )
                         sleep(retry_delay)
                         continue
                     else:
                         logger.error(
-                            f"{self.name}: Image still truncated after "
+                            f"{self.name}: Image still corrupted after "
                             f"{max_retries} attempts"
                         )
                         raise

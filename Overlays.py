@@ -170,7 +170,10 @@ class Temperature(Overlay):
         temperature_text = self.fetch_temperature()
 
         if not temperature_text:
-            return  # Stop if no temperature data is available
+            # No temperature data - save original image and return
+            webcam_with_temp.save(self.overlayed, format="JPEG")
+            self.overlayed.seek(0)
+            return
 
         # Load font with bold weight if possible
         try:
