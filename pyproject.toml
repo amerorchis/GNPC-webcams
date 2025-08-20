@@ -3,7 +3,7 @@ name = "gnpc-webcams"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.9.*"
 dependencies = [
     "ffmpeg>=1.4",
     "fonttools>=4.59.0",
