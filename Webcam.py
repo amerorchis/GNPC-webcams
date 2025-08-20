@@ -171,7 +171,11 @@ class Webcam:
                     hours=6
                 )
                 self.mod_time = mod_time
-                self.mod_time_str = mod_time.strftime("%-I:%M%p %b. %d, %Y")
+                self.mod_time_str = (
+                    mod_time.strftime("%-I:%M %p %b. %d, %Y")
+                    .replace("AM", "am")
+                    .replace("PM", "pm")
+                )
 
         # 550 errors can be ignored
         except error_perm as e:
