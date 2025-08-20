@@ -1,0 +1,28 @@
+[project]
+name = "gnpc-webcams"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ffmpeg>=1.4",
+    "fonttools>=4.59.0",
+    "pillow>=11.3.0",
+    "pre-commit>=4.3.0",
+    "python-dotenv>=1.1.1",
+    "pyyaml>=6.0.2",
+    "requests>=2.32.4",
+]
+
+[tool.ruff]
+target-version = "py310"
+extend-exclude = ["venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E402"]
+fixable = ["ALL"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
