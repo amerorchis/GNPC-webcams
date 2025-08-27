@@ -216,9 +216,24 @@ class AllskyVideo(Webcam):
         ftp = FTP(os.getenv("server"))
         ftp.login(os.getenv("username"), os.getenv("password"))
 
-        # Store the file and close connection
+        # Store the file atomically and close connection
         with open(self.logoed, "rb") as vid:
-            ftp.storbinary("STOR " + f"{self.name}.mp4", vid)
+            # Atomic file replacement: upload to temporary file first
+            temp_name = f"{self.name}.mp4.tmp"
+            ftp.storbinary("STOR " + temp_name, vid)
+
+            try:
+                # Atomically rename to final name
+                ftp.rename(temp_name, f"{self.name}.mp4")
+            except Exception as rename_error:
+                # Clean up temp file if rename fails
+                try:
+                    ftp.delete(temp_name)
+                except Exception:
+                    pass  # Ignore cleanup errors
+                ftp.quit()
+                raise rename_error
+
             ftp.quit()
 
         self.upload = f"https://glacier.org/webcam/{file_path}"  # URL for the video

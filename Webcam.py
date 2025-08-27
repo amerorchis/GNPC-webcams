@@ -131,7 +131,22 @@ class Webcam:
                     try:
                         ftp = self._get_upload_connection()
                         overlayed.seek(0)  # Reset buffer position
-                        ftp.storbinary("STOR " + file_name, overlayed)
+
+                        # Atomic file replacement: upload to temporary file first
+                        temp_name = f"{file_name}.tmp"
+                        ftp.storbinary("STOR " + temp_name, overlayed)
+
+                        try:
+                            # Atomically rename to final name
+                            ftp.rename(temp_name, file_name)
+                        except Exception as rename_error:
+                            # Clean up temp file if rename fails
+                            try:
+                                ftp.delete(temp_name)
+                            except Exception:
+                                pass  # Ignore cleanup errors
+                            raise rename_error
+
                         self.upload += [f"https://glacier.org/webcam/{file_name}"]
                         return  # Success - exit retry loop
                     except (
