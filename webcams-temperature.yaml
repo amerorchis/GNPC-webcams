@@ -26,12 +26,31 @@ webcams:
           img: overlays/logo.png
           subname: nps
           cover_date: false
+        - type: temperature
+          place: [0, 54]
+          size: [175, 66]
+          endpoint: "https://glacier.org/scripts/post_temp.cgi"
+          subname: nps
+          font_path: fonts/Tahoma.ttf
+          font_size: 42
+          bg_color: [28, 34, 68, 255]
+          bg_size: [175, 66]
+          text_color: [173, 177, 225]
       # Second composite image: logo + temperature
       - - type: logo
           place: [0, 1400]
           size: [612, 137]
           img: overlays/logo-shaded.png
           cover_date: false
+        - type: temperature
+          place: [0, 54]
+          size: [175, 66]
+          endpoint: "https://glacier.org/scripts/post_temp.cgi"
+          font_path: fonts/Tahoma.ttf
+          font_size: 42
+          bg_color: [28, 34, 68, 255]
+          bg_size: [175, 66]
+          text_color: [173, 177, 225]
 
   - name: smv
     file_name_on_server: smv.jpg
@@ -43,12 +62,31 @@ webcams:
           img: overlays/logo-shaded.png
           subname: nps
           cover_date: false
+        - type: temperature
+          place: [1600, 0]
+          size: [175, 44]
+          endpoint: "https://glacier.org/scripts/post_temp.cgi"
+          subname: nps
+          font_path: fonts/SourceSansVariable-Bold.ttf
+          font_size: 38
+          bg_color: [0, 0, 0, 64]
+          bg_size: [175, 44]
+          text_color: [255, 255, 255]
       # Second composite image: logo + temperature (auto-positioned)
       - - type: logo
           place: [0, 944]
           size: [612, 137]
           img: overlays/logo-shaded.png
           cover_date: false
+        - type: temperature
+          place: null  # Auto-position to top-right
+          size: [175, 44]
+          endpoint: "https://glacier.org/scripts/post_temp.cgi"
+          font_path: fonts/SourceSansVariable-Bold.ttf
+          font_size: 38
+          bg_color: [0, 0, 0, 64]
+          bg_size: [175, 44]
+          text_color: [255, 255, 255]
 
   - name: hlt
     file_name_on_server: hlt.jpg
