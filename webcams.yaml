@@ -63,6 +63,19 @@ webcams:
         size: [612, 137]
         img: overlays/logo-shaded.png
 
+  - name: mg
+    file_name_on_server: mg.jpg
+    logo_placements:
+      - type: logo
+        place: [140, 944]
+        size: [612, 137]
+        img: overlays/logo-shaded.png
+        subname: nps
+      - type: logo
+        place: [0, 944]
+        size: [612, 137]
+        img: overlays/logo-shaded.png
+
 allsky_videos:
   - name: allsky
     file_name_on_server: allsky.mp4
