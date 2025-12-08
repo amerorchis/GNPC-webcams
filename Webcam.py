@@ -7,9 +7,10 @@ import logging
 import os
 import socket
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from ftplib import FTP, error_perm
 from time import sleep
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from PIL import UnidentifiedImageError
@@ -182,9 +183,11 @@ class Webcam:
             # The response will be in the format: '213 YYYYMMDDHHMMSS'
             if response.startswith("213"):
                 time_str = response[4:].strip()
-                mod_time = datetime.strptime(time_str, "%Y%m%d%H%M%S") - timedelta(
-                    hours=6
+                # Parse as UTC, then convert to Mountain Time
+                mod_time_utc = datetime.strptime(time_str, "%Y%m%d%H%M%S").replace(
+                    tzinfo=ZoneInfo("UTC")
                 )
+                mod_time = mod_time_utc.astimezone(ZoneInfo("America/Denver"))
                 self.mod_time = mod_time
                 self.mod_time_str = (
                     mod_time.strftime("%-I:%M %p %b. %d, %Y")
