@@ -78,24 +78,26 @@ class AllskyVideo(Webcam):
             ftp = FTP(os.getenv("server"))
             ftp.login(os.getenv("username"), os.getenv("password"))
 
-            # Check if our processed video file exists
-            files = ftp.nlst()
-            video_exists = f"{self.name}.mp4" in files
+            try:
+                # Check if our processed video file exists
+                files = ftp.nlst()
+                video_exists = f"{self.name}.mp4" in files
 
-            if video_exists:
-                # Check if it was modified today by getting its modification time
-                try:
-                    mod_time_str = ftp.voidcmd(f"MDTM {self.name}.mp4")[4:]
-                    mod_time = datetime.strptime(mod_time_str, "%Y%m%d%H%M%S")
-                    today = datetime.now().date()
+                if video_exists:
+                    # Check if it was modified today by getting its modification time
+                    try:
+                        mod_time_str = ftp.voidcmd(f"MDTM {self.name}.mp4")[4:]
+                        mod_time = datetime.strptime(mod_time_str, "%Y%m%d%H%M%S")
+                        today = datetime.now().date()
 
-                    self.processed_today = mod_time.date() == today
-                except Exception:
-                    # If we can't get mod time, assume it's processed if file exists
-                    self.processed_today = True
+                        self.processed_today = mod_time.date() == today
+                    except Exception:
+                        # If we can't get mod time, assume it's processed if file exists
+                        self.processed_today = True
 
-            ftp.quit()
-            return self.processed_today
+                return self.processed_today
+            finally:
+                ftp.quit()
 
         except Exception:
             # If we can't connect or check, assume not processed to be safe
@@ -138,27 +140,25 @@ class AllskyVideo(Webcam):
         ftp = FTP(os.getenv("server"))
         ftp.login(self.username, self.password)
 
-        # Check if file is there, if it's not we don't need to do anything else
-        # with this
-        # object on this round.
-        if self.file_name_on_server not in ftp.nlst():
+        try:
+            # Check if file is there, if it's not we don't need to do anything else
+            # with this object on this round.
+            if self.file_name_on_server not in ftp.nlst():
+                return
+
+            self.available = True  # Mark that the video was found.
+
+            # Save the file into the buffer.
+            ftp.retrbinary(f"RETR {self.file_name_on_server}", self.file_buffer.write)
+            self.file_buffer.seek(0)
+
+            self.set_mod_time(ftp)  # Set the file modification time.
+
+            # Save the video to disk
+            with open("allsky.mp4", "wb") as allsky:
+                allsky.write(self.file_buffer.getvalue())
+        finally:
             ftp.quit()
-            return
-
-        self.available = True  # Mark that the video was found.
-
-        # Save the file into the buffer.
-        ftp.retrbinary(f"RETR {self.file_name_on_server}", self.file_buffer.write)
-        self.file_buffer.seek(0)
-
-        self.set_mod_time(ftp)  # Set the file modification time.
-
-        # Save the video to disk
-        with open("allsky.mp4", "wb") as allsky:
-            allsky.write(self.file_buffer.getvalue())
-
-        # Close the FTP connection
-        ftp.quit()
 
     def add_logo(self):
         """
@@ -216,24 +216,24 @@ class AllskyVideo(Webcam):
         ftp = FTP(os.getenv("server"))
         ftp.login(os.getenv("username"), os.getenv("password"))
 
-        # Store the file atomically and close connection
-        with open(self.logoed, "rb") as vid:
-            # Atomic file replacement: upload to temporary file first
-            temp_name = f"{self.name}.mp4.tmp"
-            ftp.storbinary("STOR " + temp_name, vid)
+        try:
+            # Store the file atomically and close connection
+            with open(self.logoed, "rb") as vid:
+                # Atomic file replacement: upload to temporary file first
+                temp_name = f"{self.name}.mp4.tmp"
+                ftp.storbinary("STOR " + temp_name, vid)
 
-            try:
-                # Atomically rename to final name
-                ftp.rename(temp_name, f"{self.name}.mp4")
-            except Exception as rename_error:
-                # Clean up temp file if rename fails
                 try:
-                    ftp.delete(temp_name)
-                except Exception:
-                    pass  # Ignore cleanup errors
-                ftp.quit()
-                raise rename_error
-
+                    # Atomically rename to final name
+                    ftp.rename(temp_name, f"{self.name}.mp4")
+                except Exception as rename_error:
+                    # Clean up temp file if rename fails
+                    try:
+                        ftp.delete(temp_name)
+                    except Exception:
+                        pass  # Ignore cleanup errors
+                    raise rename_error
+        finally:
             ftp.quit()
 
         self.upload = f"https://glacier.org/webcam/{file_path}"  # URL for the video
@@ -251,12 +251,12 @@ class AllskyVideo(Webcam):
         ftp = FTP(os.getenv("server"))
         ftp.login(self.username, self.password)
 
-        # Remove the allsky video
-        if self.file_name_on_server in ftp.nlst():
-            ftp.delete(self.file_name_on_server)
-
-        # Close the FTP connection
-        ftp.quit()
+        try:
+            # Remove the allsky video
+            if self.file_name_on_server in ftp.nlst():
+                ftp.delete(self.file_name_on_server)
+        finally:
+            ftp.quit()
 
 
 if __name__ == "__main__":
