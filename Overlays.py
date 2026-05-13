@@ -41,10 +41,28 @@ class Logo(Overlay):
         img="overlays/logo-shaded.png",
         subname=None,
         cover_date=False,
+        cover_date_img="overlays/corner-rectangle.png",
+        cover_date_bg_color=None,
+        cover_date_size=None,
+        cover_date_position=(0, 0),
+        cover_date_font_path="fonts/OpenSans-Bold.ttf",
+        cover_date_font_size=16,
+        cover_date_text_position=(4, 3),
+        cover_date_text_color=(255, 255, 255),
+        cover_date_text_scale=1.0,
     ):
         super().__init__(place, size, subname)
         self.logo_img = img
         self.cover_date = cover_date
+        self.cover_date_img = cover_date_img
+        self.cover_date_bg_color = cover_date_bg_color
+        self.cover_date_size = cover_date_size
+        self.cover_date_position = cover_date_position
+        self.cover_date_font_path = cover_date_font_path
+        self.cover_date_font_size = cover_date_font_size
+        self.cover_date_text_position = cover_date_text_position
+        self.cover_date_text_color = cover_date_text_color
+        self.cover_date_text_scale = cover_date_text_scale
 
     def add_overlay(self, image, mod_time_str=""):
         # Open the images
@@ -62,15 +80,51 @@ class Logo(Overlay):
 
         # Cover old datetime
         if self.cover_date:
-            corner_rectangle = Image.open("overlays/corner-rectangle.png")
-            webcam_and_logo.paste(corner_rectangle, None)
+            position = tuple(self.cover_date_position)
+            if self.cover_date_bg_color is not None:
+                cover = Image.new(
+                    "RGBA", tuple(self.cover_date_size), tuple(self.cover_date_bg_color)
+                )
+            else:
+                cover = Image.open(self.cover_date_img).convert("RGBA")
+            webcam_and_logo.paste(cover, position, cover)
 
             # Add datetime
-            draw = ImageDraw.Draw(webcam_and_logo)
-            font = ImageFont.truetype("fonts/OpenSans-Bold.ttf", 16)
-            text_position = (4, 3)
-            text_color = (255, 255, 255)
-            draw.text(text_position, mod_time_str, font=font, fill=text_color)
+            text_color = tuple(self.cover_date_text_color)
+            text_xy = (
+                position[0] + self.cover_date_text_position[0],
+                position[1] + self.cover_date_text_position[1],
+            )
+            scale = self.cover_date_text_scale
+            if scale and scale != 1.0 and self.cover_date_size is not None:
+                # Render text on a downscaled transparent canvas, then upscale —
+                # gives the text a softer/chunkier look matching JPEG camera output.
+                cover_w, cover_h = self.cover_date_size
+                small_w = max(1, int(round(cover_w * scale)))
+                small_h = max(1, int(round(cover_h * scale)))
+                small_font = ImageFont.truetype(
+                    self.cover_date_font_path,
+                    max(1, int(round(self.cover_date_font_size * scale))),
+                )
+                small_canvas = Image.new("RGBA", (small_w, small_h), (0, 0, 0, 0))
+                small_draw = ImageDraw.Draw(small_canvas)
+                small_draw.text(
+                    (
+                        int(round(self.cover_date_text_position[0] * scale)),
+                        int(round(self.cover_date_text_position[1] * scale)),
+                    ),
+                    mod_time_str,
+                    font=small_font,
+                    fill=text_color,
+                )
+                upscaled = small_canvas.resize((cover_w, cover_h), Image.BILINEAR)
+                webcam_and_logo.paste(upscaled, position, upscaled)
+            else:
+                draw = ImageDraw.Draw(webcam_and_logo)
+                font = ImageFont.truetype(
+                    self.cover_date_font_path, self.cover_date_font_size
+                )
+                draw.text(text_xy, mod_time_str, font=font, fill=text_color)
 
         # Save logoed file
         webcam_and_logo.save(self.overlayed, format="JPEG")

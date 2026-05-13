@@ -25,6 +25,15 @@ class LogoConfig:
     img: str = "overlays/logo-shaded.png"
     subname: Optional[str] = None
     cover_date: bool = False
+    cover_date_img: str = "overlays/corner-rectangle.png"
+    cover_date_bg_color: Optional[Tuple[int, int, int, int]] = None
+    cover_date_size: Optional[Tuple[int, int]] = None
+    cover_date_position: Tuple[int, int] = (0, 0)
+    cover_date_font_path: str = "fonts/OpenSans-Bold.ttf"
+    cover_date_font_size: int = 16
+    cover_date_text_position: Tuple[int, int] = (4, 3)
+    cover_date_text_color: Tuple[int, int, int] = (255, 255, 255)
+    cover_date_text_scale: float = 1.0
 
 
 @dataclass
@@ -156,6 +165,15 @@ def create_overlay_from_config(overlay_config: Union[LogoConfig, TemperatureConf
             img=overlay_config.img,
             subname=overlay_config.subname,
             cover_date=overlay_config.cover_date,
+            cover_date_img=overlay_config.cover_date_img,
+            cover_date_bg_color=overlay_config.cover_date_bg_color,
+            cover_date_size=overlay_config.cover_date_size,
+            cover_date_position=overlay_config.cover_date_position,
+            cover_date_font_path=overlay_config.cover_date_font_path,
+            cover_date_font_size=overlay_config.cover_date_font_size,
+            cover_date_text_position=overlay_config.cover_date_text_position,
+            cover_date_text_color=overlay_config.cover_date_text_color,
+            cover_date_text_scale=overlay_config.cover_date_text_scale,
         )
     elif isinstance(overlay_config, TemperatureConfig):
         return Temperature(
