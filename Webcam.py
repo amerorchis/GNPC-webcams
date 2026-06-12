@@ -118,8 +118,8 @@ class Webcam:
         """Replace the downloaded image with a black frame of the same size.
 
         Used to override a feed (e.g. when a camera has been bumped or aimed
-        somewhere it shouldn't be). Overlays are still applied on top, so the
-        GNPC logo remains visible over the black frame.
+        somewhere it shouldn't be). No overlays (including the logo) are applied
+        in blackout mode, so every output feed is a bare black frame.
         """
         logger.info(f"  {self.name}: Blackout enabled, replacing with black frame")
         self.file_buffer.seek(0)
@@ -131,7 +131,21 @@ class Webcam:
         self.file_buffer.seek(0)
 
     def _apply_overlays(self):
-        """Add all overlays to the image."""
+        """Add all overlays to the image.
+
+        In blackout mode the logo is skipped: each feed's output is just the
+        black frame, but the per-feed filenames (via each overlay's subname)
+        are preserved so the same set of images is published.
+        """
+        if self.blackout:
+            logger.debug(f"  {self.name}: Blackout mode, skipping logo overlays")
+            for overlay in self.overlays:
+                self.file_buffer.seek(0)
+                overlay.overlayed = io.BytesIO()
+                overlay.overlayed.write(self.file_buffer.read())
+                overlay.overlayed.seek(0)
+            return
+
         logger.debug(f"  {self.name}: Applying {len(self.overlays)} overlays...")
         for i, overlay in enumerate(self.overlays):
             logger.debug(
