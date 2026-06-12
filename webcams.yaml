@@ -51,6 +51,8 @@ webcams:
 
   - name: smv
     file_name_on_server: smv.jpg
+    # Temporary: camera was bumped/aimed wrong. Set false to restore the live feed.
+    blackout: true
     logo_placements:
       # First composite image: logo + temperature
       - - type: logo

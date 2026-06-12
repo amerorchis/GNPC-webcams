@@ -60,6 +60,7 @@ class WebcamConfig:
     logo_placements: List[
         Union[LogoConfig, TemperatureConfig, List[Union[LogoConfig, TemperatureConfig]]]
     ]
+    blackout: bool = False
 
 
 @dataclass
@@ -136,6 +137,7 @@ def load_config(config_file: str = "webcams.yaml") -> AppConfig:
             name=webcam_data["name"],
             file_name_on_server=webcam_data["file_name_on_server"],
             logo_placements=logo_placements,
+            blackout=webcam_data.get("blackout", False),
         )
         webcams.append(webcam)
 
@@ -209,6 +211,7 @@ def create_webcam_from_config(webcam_config: WebcamConfig):
         name=webcam_config.name,
         file_name_on_server=webcam_config.file_name_on_server,
         logo_placements=logo_placements,
+        blackout=webcam_config.blackout,
     )
 
 

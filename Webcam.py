@@ -13,7 +13,7 @@ from time import sleep
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from PIL import UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 from Overlays import CompositeOverlay
 
@@ -29,10 +29,11 @@ class Webcam:
     _download_lock = threading.Lock()
     _upload_lock = threading.Lock()
 
-    def __init__(self, name, file_name_on_server, logo_placements=None):
+    def __init__(self, name, file_name_on_server, logo_placements=None, blackout=False):
         self.name = name
         self.file_buffer = io.BytesIO()
         self.file_name_on_server = file_name_on_server
+        self.blackout = blackout
 
         # Process logo_placements (supports both single overlays and grouped overlays)
         overlay_list = logo_placements or []
@@ -112,6 +113,22 @@ class Webcam:
                             f"  {self.name}: Download failed after {max_retries} tries"
                         )
                         raise
+
+    def _apply_blackout(self):
+        """Replace the downloaded image with a black frame of the same size.
+
+        Used to override a feed (e.g. when a camera has been bumped or aimed
+        somewhere it shouldn't be). Overlays are still applied on top, so the
+        GNPC logo remains visible over the black frame.
+        """
+        logger.info(f"  {self.name}: Blackout enabled, replacing with black frame")
+        self.file_buffer.seek(0)
+        with Image.open(self.file_buffer) as img:
+            size = img.size
+        black = Image.new("RGB", size, (0, 0, 0))
+        self.file_buffer = io.BytesIO()
+        black.save(self.file_buffer, format="JPEG")
+        self.file_buffer.seek(0)
 
     def _apply_overlays(self):
         """Add all overlays to the image."""
@@ -227,6 +244,8 @@ class Webcam:
 
                 # Download and process image
                 self._download_image()
+                if self.blackout:
+                    self._apply_blackout()
                 self._apply_overlays()
                 return  # Success - exit early
 
