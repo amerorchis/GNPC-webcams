@@ -19,35 +19,15 @@ webcams:
   - name: lpp
     file_name_on_server: lpp.jpg
     logo_placements:
-      # First composite image: logo + temperature
-      - - type: logo
-          place: [1507, 10]
-          size: [531, 88]
-          img: overlays/logo.png
-          subname: nps
-          cover_date: true
-          cover_date_bg_color: [26, 32, 66, 255]
-          cover_date_size: [480, 56]
-          cover_date_position: [0, 0]
-          cover_date_font_path: fonts/Tahoma.ttf
-          cover_date_font_size: 44
-          cover_date_text_position: [6, 2]
-          cover_date_text_color: [186, 191, 234]
-          cover_date_text_scale: 0.85
-      # Second composite image: logo + temperature
-      - - type: logo
-          place: [0, 1400]
-          size: [612, 137]
-          img: overlays/logo-shaded.png
-          cover_date: true
-          cover_date_bg_color: [26, 32, 66, 255]
-          cover_date_size: [480, 56]
-          cover_date_position: [0, 0]
-          cover_date_font_path: fonts/Tahoma.ttf
-          cover_date_font_size: 44
-          cover_date_text_position: [6, 2]
-          cover_date_text_color: [186, 191, 234]
-          cover_date_text_scale: 0.85
+      - type: logo
+        place: [140, 944]
+        size: [612, 137]
+        img: overlays/logo-shaded.png
+        subname: nps
+      - type: logo
+        place: [0, 944]
+        size: [612, 137]
+        img: overlays/logo-shaded.png
 
   - name: smv
     file_name_on_server: smv.jpg
