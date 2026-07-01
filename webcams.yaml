@@ -18,7 +18,6 @@ webcams:
 
   - name: lpp
     file_name_on_server: lpp.jpg
-    blackout: true
     logo_placements:
       - type: logo
         place: [140, 944]
@@ -51,7 +50,6 @@ webcams:
 
   - name: hlt
     file_name_on_server: hlt.jpg
-    blackout: true
     logo_placements:
       - type: logo
         place: [140, 944]
