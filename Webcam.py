@@ -29,14 +29,14 @@ def connect_ftp(server, user, password):
     to plain FTP so credentials are encrypted whenever possible.
     """
     try:
-        ftps = FTP_TLS(server)
+        ftps = FTP_TLS(server, timeout=30)
         ftps.login(user, password)
         ftps.prot_p()  # Encrypt the data channel too
         return ftps
     except Exception as e:
         logger.warning(f"FTPS unavailable ({e}), falling back to plain FTP")
 
-    ftp = FTP(server)
+    ftp = FTP(server, timeout=30)
     ftp.login(user, password)
     return ftp
 
