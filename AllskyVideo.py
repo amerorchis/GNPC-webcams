@@ -200,8 +200,10 @@ class AllskyVideo(Webcam):
         try:
             # Store the file atomically and close connection
             with open(self.logoed, "rb") as vid:
-                # Atomic file replacement: upload to temporary file first
-                temp_name = f"{self.name}.mp4.tmp"
+                # Atomic file replacement: upload to temporary file first.
+                # PID in the name so overlapping cron runs don't rename
+                # each other's temp files out from under them.
+                temp_name = f"{self.name}.mp4.{os.getpid()}.tmp"
                 ftp.storbinary("STOR " + temp_name, vid)
 
                 try:

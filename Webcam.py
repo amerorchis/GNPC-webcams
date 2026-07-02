@@ -185,8 +185,10 @@ class Webcam:
                         ftp = self._get_upload_connection()
                         overlayed.seek(0)  # Reset buffer position
 
-                        # Atomic file replacement: upload to temporary file first
-                        temp_name = f"{file_name}.tmp"
+                        # Atomic file replacement: upload to temporary file first.
+                        # PID in the name so overlapping cron runs don't rename
+                        # each other's temp files out from under them.
+                        temp_name = f"{file_name}.{os.getpid()}.tmp"
                         ftp.storbinary("STOR " + temp_name, overlayed)
 
                         try:
