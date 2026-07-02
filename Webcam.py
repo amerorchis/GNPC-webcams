@@ -8,7 +8,7 @@ import os
 import socket
 import threading
 from datetime import datetime
-from ftplib import FTP, error_perm
+from ftplib import FTP, FTP_TLS, error_perm
 from time import sleep
 from zoneinfo import ZoneInfo
 
@@ -16,10 +16,29 @@ from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
 from Overlays import CompositeOverlay
+from paths import resolve_path
 
 logger = logging.getLogger(__name__)
 
-load_dotenv("environment.env")
+load_dotenv(resolve_path("environment.env"))
+
+
+def connect_ftp(server, user, password):
+    """
+    Connect over FTPS (explicit TLS) when the server supports it, falling back
+    to plain FTP so credentials are encrypted whenever possible.
+    """
+    try:
+        ftps = FTP_TLS(server)
+        ftps.login(user, password)
+        ftps.prot_p()  # Encrypt the data channel too
+        return ftps
+    except Exception as e:
+        logger.warning(f"FTPS unavailable ({e}), falling back to plain FTP")
+
+    ftp = FTP(server)
+    ftp.login(user, password)
+    return ftp
 
 
 class Webcam:
@@ -55,11 +74,13 @@ class Webcam:
 
     def _download_image(self, max_retries=3, retry_delay=2):
         """Download image using shared FTP connection with retry logic."""
-        logger.debug(f"  {self.name}: Waiting for download lock...")
-        with self._download_lock:
-            logger.debug(f"  {self.name}: Got download lock, getting FTP connection...")
 
-            def download_attempt():
+        def download_attempt():
+            # Hold the lock only while talking to the server so retry sleeps
+            # don't stall the other cameras' downloads.
+            logger.debug(f"  {self.name}: Waiting for download lock...")
+            with self._download_lock:
+                logger.debug(f"  {self.name}: Got download lock...")
                 ftp = self._get_download_connection()
                 ftp.retrbinary(
                     f"RETR {self.file_name_on_server}", self.file_buffer.write
@@ -67,52 +88,51 @@ class Webcam:
                 self.file_buffer.seek(0)
                 self._set_modification_time(ftp)
 
-            # Try to download the image with connection retry logic
-            for attempt in range(max_retries):
-                try:
-                    download_attempt()
-                    logger.debug(f"  {self.name}: Download successful")
-                    return  # Success - exit retry loop
+        # Try to download the image with connection retry logic
+        for attempt in range(max_retries):
+            try:
+                download_attempt()
+                logger.debug(f"  {self.name}: Download successful")
+                return  # Success - exit retry loop
 
-                except error_perm as e:
-                    if str(e).startswith("550"):
-                        logger.info(
-                            f"  {self.name}: File not found, waiting 6 seconds..."
-                        )
-                        sleep(6)
-                        try:
-                            download_attempt()
-                            logger.debug(f"  {self.name}: Download successful on retry")
-                            return  # Success - exit retry loop
-                        except error_perm as exc:
-                            raise FileNotFoundError(
-                                f"{self.name} wasn't found in the folder."
-                            ) from exc
-                    else:
-                        raise
+            except error_perm as e:
+                if str(e).startswith("550"):
+                    logger.info(f"  {self.name}: File not found, waiting 6 seconds...")
+                    sleep(6)
+                    try:
+                        download_attempt()
+                        logger.debug(f"  {self.name}: Download successful on retry")
+                        return  # Success - exit retry loop
+                    except error_perm as exc:
+                        raise FileNotFoundError(
+                            f"{self.name} wasn't found in the folder."
+                        ) from exc
+                else:
+                    raise
 
-                except (
-                    BrokenPipeError,
-                    socket.error,
-                    ConnectionResetError,
-                    OSError,
-                ) as e:
-                    logger.warning(
-                        f"  {self.name}: Download failed (attempt {attempt + 1}): {e}"
-                    )
-                    # Reset connection on error
+            except (
+                BrokenPipeError,
+                socket.error,
+                ConnectionResetError,
+                OSError,
+            ) as e:
+                logger.warning(
+                    f"  {self.name}: Download failed (attempt {attempt + 1}): {e}"
+                )
+                # Reset connection on error
+                with self._download_lock:
                     self.__class__._download_ftp = None
-                    self.file_buffer = io.BytesIO()  # Reset buffer
-                    if attempt < max_retries - 1:
-                        logger.info(
-                            f"  {self.name}: Retrying download in {retry_delay}s..."
-                        )
-                        sleep(retry_delay)
-                    else:
-                        logger.error(
-                            f"  {self.name}: Download failed after {max_retries} tries"
-                        )
-                        raise
+                self.file_buffer = io.BytesIO()  # Reset buffer
+                if attempt < max_retries - 1:
+                    logger.info(
+                        f"  {self.name}: Retrying download in {retry_delay}s..."
+                    )
+                    sleep(retry_delay)
+                else:
+                    logger.error(
+                        f"  {self.name}: Download failed after {max_retries} tries"
+                    )
+                    raise
 
     def _apply_blackout(self):
         """Replace the downloaded image with a black frame of the same size.
@@ -156,6 +176,7 @@ class Webcam:
 
     def upload_image(self, max_retries=3, retry_delay=2):
         """Upload processed images using shared FTP connection with retry logic."""
+        self.upload = []
         with self._upload_lock:
 
             def upload_file(overlayed, file_name):
@@ -220,16 +241,25 @@ class Webcam:
                 )
                 mod_time = mod_time_utc.astimezone(ZoneInfo("America/Denver"))
                 self.mod_time = mod_time
+                # lstrip("0") drops the leading zero of the hour portably
+                # (strftime's %-I is glibc/macOS-only)
                 self.mod_time_str = (
-                    mod_time.strftime("%-I:%M %p %b. %d, %Y")
+                    mod_time.strftime("%I:%M %p %b. %d, %Y")
+                    .lstrip("0")
                     .replace("AM", "am")
                     .replace("PM", "pm")
                 )
 
-        # 550 errors can be ignored
         except error_perm as e:
+            # 550 errors can be ignored, but the image then goes out
+            # with a blank timestamp
             if str(e).startswith("550"):
-                pass
+                logger.warning(
+                    f"  {self.name}: Could not read modification time (550); "
+                    "timestamp will be blank"
+                )
+            else:
+                raise
 
     def _process_overlay_files(self, action_func):
         """Process each overlay file with the given action function."""
@@ -239,10 +269,11 @@ class Webcam:
 
     def save_debug_images(self):
         """Save processed images to debug-images folder for debugging purposes."""
-        os.makedirs("debug-images", exist_ok=True)
+        debug_dir = resolve_path("debug-images")
+        os.makedirs(debug_dir, exist_ok=True)
 
         def save_file(overlayed, file_name):
-            debug_path = os.path.join("debug-images", file_name)
+            debug_path = os.path.join(debug_dir, file_name)
             with open(debug_path, "wb") as f:
                 f.write(overlayed.read())
             logger.info(f"Saved debug image: {debug_path}")
@@ -296,10 +327,10 @@ class Webcam:
         if cls._download_ftp is None:
             logger.debug("    Creating new download FTP connection...")
             try:
-                cls._download_ftp = FTP(os.getenv("server"))
-                logger.debug("    Connected to server, logging in...")
-                cls._download_ftp.login(
-                    os.getenv("ftp_get_user"), os.getenv("ftp_get_pwd")
+                cls._download_ftp = connect_ftp(
+                    os.getenv("server"),
+                    os.getenv("ftp_get_user"),
+                    os.getenv("ftp_get_pwd"),
                 )
                 logger.debug("    Download FTP connection established")
             except Exception as e:
@@ -320,8 +351,11 @@ class Webcam:
         """
         if cls._upload_ftp is None:
             try:
-                cls._upload_ftp = FTP(os.getenv("server"))
-                cls._upload_ftp.login(os.getenv("username"), os.getenv("password"))
+                cls._upload_ftp = connect_ftp(
+                    os.getenv("server"),
+                    os.getenv("username"),
+                    os.getenv("password"),
+                )
             except Exception as e:
                 cls._upload_ftp = None
                 raise ConnectionError(

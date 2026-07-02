@@ -6,6 +6,7 @@ and videos from the glacier.org FTP server to HTML server.
 """
 
 import logging
+import sys
 import threading
 import traceback
 from time import sleep
@@ -13,8 +14,9 @@ from time import sleep
 from dotenv import load_dotenv
 
 from logging_config import setup_logging
+from paths import resolve_path
 
-load_dotenv("environment.env")
+load_dotenv(resolve_path("environment.env"))
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -67,7 +69,8 @@ def main():
     errors = [item for item in errors if item is not None]
     if errors:
         error_message = "\n\n".join(errors)
-        print(error_message)  # Printing will trigger cron to send an email
+        # stderr so cron emails errors even when stdout is redirected to /dev/null
+        print(error_message, file=sys.stderr)
 
 
 if __name__ == "__main__":

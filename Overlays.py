@@ -3,14 +3,16 @@ Overlay classes for webcam image processing.
 """
 
 import io
+import logging
 import random
 from abc import ABC, abstractmethod
 
 import requests
-from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
-load_dotenv("environment.env")
+from paths import resolve_path
+
+logger = logging.getLogger(__name__)
 
 
 class Overlay(ABC):
@@ -65,8 +67,10 @@ class Logo(Overlay):
         self.cover_date_text_scale = cover_date_text_scale
 
     def add_overlay(self, image, mod_time_str=""):
+        self.overlayed = io.BytesIO()
+
         # Open the images
-        logo = Image.open(self.logo_img)
+        logo = Image.open(resolve_path(self.logo_img))
         webcam = Image.open(image)
 
         # Resize logo
@@ -86,7 +90,7 @@ class Logo(Overlay):
                     "RGBA", tuple(self.cover_date_size), tuple(self.cover_date_bg_color)
                 )
             else:
-                cover = Image.open(self.cover_date_img).convert("RGBA")
+                cover = Image.open(resolve_path(self.cover_date_img)).convert("RGBA")
             webcam_and_logo.paste(cover, position, cover)
 
             # Add datetime
@@ -103,7 +107,7 @@ class Logo(Overlay):
                 small_w = max(1, int(round(cover_w * scale)))
                 small_h = max(1, int(round(cover_h * scale)))
                 small_font = ImageFont.truetype(
-                    self.cover_date_font_path,
+                    resolve_path(self.cover_date_font_path),
                     max(1, int(round(self.cover_date_font_size * scale))),
                 )
                 small_canvas = Image.new("RGBA", (small_w, small_h), (0, 0, 0, 0))
@@ -122,7 +126,7 @@ class Logo(Overlay):
             else:
                 draw = ImageDraw.Draw(webcam_and_logo)
                 font = ImageFont.truetype(
-                    self.cover_date_font_path, self.cover_date_font_size
+                    resolve_path(self.cover_date_font_path), self.cover_date_font_size
                 )
                 draw.text(text_xy, mod_time_str, font=font, fill=text_color)
 
@@ -194,19 +198,20 @@ class Temperature(Overlay):
             else:
                 return ""
         except requests.RequestException as e:
-            print(f"Error fetching temperature: {e}")
+            logger.warning(f"Error fetching temperature: {e}")
             return ""
 
     def _load_bold_font(self):
         """Load font directly from the specified font path."""
         try:
-            return ImageFont.truetype(self.font_path, self.font_size)
+            return ImageFont.truetype(resolve_path(self.font_path), self.font_size)
         except (OSError, IOError):
             # Fallback to default font if file not found
             return ImageFont.load_default()
 
     def add_overlay(self, image, mod_time_str=""):
         """Add temperature overlay to the image."""
+        self.overlayed = io.BytesIO()
 
         # Open the webcam image
         webcam = Image.open(image)
@@ -284,6 +289,8 @@ class CompositeOverlay(Overlay):
 
     def add_overlay(self, image, mod_time_str=""):
         """Apply all overlays sequentially to create a composite image."""
+        self.overlayed = io.BytesIO()
+
         # Start with the original image
         current_image = image
 

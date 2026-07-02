@@ -4,13 +4,14 @@ Configuration dataclasses and YAML loading for GNPC webcams.
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple, Union
 
 import yaml
 
 from AllskyVideo import AllskyVideo
 from Overlays import Logo, Temperature
+from paths import resolve_path
 from Webcam import Webcam
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,8 @@ class AppConfig:
 
 
 def load_config(config_file: str = "webcams.yaml") -> AppConfig:
-    """Load configuration from YAML file."""
+    """Load configuration from YAML file (relative paths resolve to the repo dir)."""
+    config_file = resolve_path(config_file)
     logger.info(f"Loading configuration from {config_file}")
 
     try:
@@ -161,34 +163,12 @@ def create_overlay_from_config(overlay_config: Union[LogoConfig, TemperatureConf
     """Create an overlay object from configuration."""
 
     if isinstance(overlay_config, LogoConfig):
-        return Logo(
-            place=overlay_config.place,
-            size=overlay_config.size,
-            img=overlay_config.img,
-            subname=overlay_config.subname,
-            cover_date=overlay_config.cover_date,
-            cover_date_img=overlay_config.cover_date_img,
-            cover_date_bg_color=overlay_config.cover_date_bg_color,
-            cover_date_size=overlay_config.cover_date_size,
-            cover_date_position=overlay_config.cover_date_position,
-            cover_date_font_path=overlay_config.cover_date_font_path,
-            cover_date_font_size=overlay_config.cover_date_font_size,
-            cover_date_text_position=overlay_config.cover_date_text_position,
-            cover_date_text_color=overlay_config.cover_date_text_color,
-            cover_date_text_scale=overlay_config.cover_date_text_scale,
-        )
+        return Logo(**asdict(overlay_config))
     elif isinstance(overlay_config, TemperatureConfig):
-        return Temperature(
-            place=overlay_config.place,
-            size=overlay_config.size,
-            endpoint=overlay_config.endpoint,
-            subname=overlay_config.subname,
-            font_path=overlay_config.font_path,
-            font_size=overlay_config.font_size,
-            bg_color=tuple(overlay_config.bg_color),
-            bg_size=overlay_config.bg_size,
-            text_color=tuple(overlay_config.text_color),
-        )
+        kwargs = asdict(overlay_config)
+        kwargs["bg_color"] = tuple(kwargs["bg_color"])
+        kwargs["text_color"] = tuple(kwargs["text_color"])
+        return Temperature(**kwargs)
     else:
         raise ValueError(f"Unknown overlay config type: {type(overlay_config)}")
 

@@ -34,14 +34,15 @@ webcams:
     # Temporary: camera was bumped/aimed wrong. Set false to restore the live feed.
     blackout: true
     logo_placements:
-      # First composite image: logo + temperature
+      # Grouped placements: add more overlays to a group to composite them
+      # into a single output image (see webcams-temperature.yaml for an
+      # example with a temperature overlay)
       - - type: logo
           place: [140, 944]
           size: [612, 137]
           img: overlays/logo-shaded.png
           subname: nps
           cover_date: false
-      # Second composite image: logo + temperature (auto-positioned)
       - - type: logo
           place: [0, 944]
           size: [612, 137]

@@ -1,20 +1,20 @@
 """
 A class to represent the overnight timelapse video.
-Inherits from Webcam to maintain the same API.s
+Inherits from Webcam to maintain the same API.
 """
 
 import io
 import logging
 import os
-from datetime import datetime, timedelta
-from ftplib import FTP, error_perm
+from datetime import datetime
 
 import ffmpeg
 from dotenv import load_dotenv
 
-from Webcam import Webcam
+from paths import resolve_path
+from Webcam import Webcam, connect_ftp
 
-load_dotenv("environment.env")
+load_dotenv(resolve_path("environment.env"))
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,11 @@ class AllskyVideo(Webcam):
         self.username = username
         self.password = password
 
+        # Local working files, unique per instance so multiple videos
+        # processed in parallel threads don't clobber each other.
+        self.raw_video_path = resolve_path(f"{name}-raw.mp4")
+        self.logoed_video_path = resolve_path(f"{name}-logo.mp4")
+
         self.mod_time = None
         self.mod_time_str = ""
         self.upload = None
@@ -49,7 +54,6 @@ class AllskyVideo(Webcam):
         """
         logger.info(f"{self.name}: Checking if video already processed today...")
 
-        # Check if already processed today before doing anything
         try:
             if self.check_if_processed_today():
                 logger.info(f"{self.name}: Video already processed today, skipping")
@@ -59,7 +63,6 @@ class AllskyVideo(Webcam):
             # Continue with processing as fallback
 
         logger.info(f"{self.name}: Processing video...")
-        # Call parent class methods for video processing
         self.get()
         logger.info(f"{self.name}: After get(), available={self.available}")
         if self.available:
@@ -75,8 +78,9 @@ class AllskyVideo(Webcam):
         """
         try:
             # Connect to the upload FTP server
-            ftp = FTP(os.getenv("server"))
-            ftp.login(os.getenv("username"), os.getenv("password"))
+            ftp = connect_ftp(
+                os.getenv("server"), os.getenv("username"), os.getenv("password")
+            )
 
             try:
                 # Check if our processed video file exists
@@ -103,42 +107,16 @@ class AllskyVideo(Webcam):
             # If we can't connect or check, assume not processed to be safe
             return False
 
-    def set_mod_time(self, ftp):
-        """
-        Set the modification time for the video file (same logic as parent class).
-        """
-        try:
-            response = ftp.sendcmd(f"MDTM {self.file_name_on_server}")
-            # The response will be in the format: '213 YYYYMMDDHHMMSS'
-            if response.startswith("213"):
-                time_str = response[4:].strip()
-                mod_time = datetime.strptime(time_str, "%Y%m%d%H%M%S") - timedelta(
-                    hours=6
-                )
-                self.mod_time = mod_time
-                self.mod_time_str = mod_time.strftime("%-I:%M%p %b. %d, %Y")
-        # 550 errors can be ignored
-        except error_perm as e:
-            if str(e).startswith("550"):
-                pass
-
     def get(self):
         """
         Download overnight timelapse video from FTP server.
 
         Checks if the video file exists on the server, downloads it to a buffer,
-        saves it to disk as 'allsky.mp4', and sets the modification time.
+        saves it to disk, and sets the modification time.
         Sets self.available to True if video is found and downloaded successfully.
         """
-        # First check if we've already processed a video today
-        if self.check_if_processed_today():
-            logger.info(f"{self.name}: Already processed today, marking as unavailable")
-            self.available = False  # Explicitly set to False
-            return  # Gracefully exit - already processed today
-
         # Connect to the FTP server
-        ftp = FTP(os.getenv("server"))
-        ftp.login(self.username, self.password)
+        ftp = connect_ftp(os.getenv("server"), self.username, self.password)
 
         try:
             # Check if file is there, if it's not we don't need to do anything else
@@ -152,10 +130,10 @@ class AllskyVideo(Webcam):
             ftp.retrbinary(f"RETR {self.file_name_on_server}", self.file_buffer.write)
             self.file_buffer.seek(0)
 
-            self.set_mod_time(ftp)  # Set the file modification time.
+            self._set_modification_time(ftp)  # Set the file modification time.
 
             # Save the video to disk
-            with open("allsky.mp4", "wb") as allsky:
+            with open(self.raw_video_path, "wb") as allsky:
                 allsky.write(self.file_buffer.getvalue())
         finally:
             ftp.quit()
@@ -164,8 +142,8 @@ class AllskyVideo(Webcam):
         """
         Apply logo overlay to the downloaded video using FFmpeg.
 
-        Uses FFmpeg to overlay the logo-shaded-video.png onto the allsky.mp4
-        at the configured position and saves the result as 'allsky-logo.mp4'.
+        Uses FFmpeg to overlay the logo-shaded-video.png onto the raw video
+        at the configured position and saves the result to disk.
         Only processes if self.available is True.
         """
         if not self.available:
@@ -173,21 +151,23 @@ class AllskyVideo(Webcam):
             return
 
         # Additional check: ensure video file actually exists
-        if not os.path.exists("allsky.mp4"):
-            logger.warning(f"{self.name}: allsky.mp4 file not found, cannot add logo")
+        if not os.path.exists(self.raw_video_path):
+            logger.warning(
+                f"{self.name}: {self.raw_video_path} not found, cannot add logo"
+            )
             self.available = False
             return
 
         logger.info(f"{self.name}: Adding logo to video...")
 
         # Set up the input and output streams
-        input_stream = ffmpeg.input("allsky.mp4")
-        logo_stream = ffmpeg.input("overlays/logo-shaded-video.png")
+        input_stream = ffmpeg.input(self.raw_video_path)
+        logo_stream = ffmpeg.input(resolve_path("overlays/logo-shaded-video.png"))
         output_stream = ffmpeg.output(
             input_stream.overlay(
                 logo_stream, x=self.logo_place[0], y=self.logo_place[1]
             ),
-            "allsky-logo.mp4",
+            self.logoed_video_path,
             format="mp4",
         )
 
@@ -198,7 +178,7 @@ class AllskyVideo(Webcam):
             capture_stdout=True,
             capture_stderr=True,
         )
-        self.logoed = "allsky-logo.mp4"  # Path to logo video file.
+        self.logoed = self.logoed_video_path  # Path to logo video file.
 
     def upload_image(self):
         """
@@ -213,8 +193,9 @@ class AllskyVideo(Webcam):
         file_path = f"{self.name}.mp4"  # Desired file name on server
 
         # Connect to the FTP server
-        ftp = FTP(os.getenv("server"))
-        ftp.login(os.getenv("username"), os.getenv("password"))
+        ftp = connect_ftp(
+            os.getenv("server"), os.getenv("username"), os.getenv("password")
+        )
 
         try:
             # Store the file atomically and close connection
@@ -248,8 +229,7 @@ class AllskyVideo(Webcam):
         """
 
         # Connect to the FTP server
-        ftp = FTP(os.getenv("server"))
-        ftp.login(self.username, self.password)
+        ftp = connect_ftp(os.getenv("server"), self.username, self.password)
 
         try:
             # Remove the allsky video

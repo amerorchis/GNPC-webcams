@@ -6,6 +6,8 @@ Handles environment-based logging setup for console or file output.
 import logging
 import os
 
+from paths import resolve_path
+
 
 def setup_logging():
     """Configure logging based on environment variables."""
@@ -18,7 +20,7 @@ def setup_logging():
             level=getattr(logging, log_level),
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
-            filename=log_file,
+            filename=resolve_path(log_file),
             filemode="a",
         )
     else:

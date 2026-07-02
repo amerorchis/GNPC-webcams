@@ -21,23 +21,23 @@ webcams:
   - name: lpp
     file_name_on_server: lpp.jpg
     logo_placements:
-      # Composite overlay: logo + temperature
-      - - type: logo
-          place: [1507, 10]
-          size: [531, 88]
-          img: overlays/logo.png
-          subname: nps
-        - type: temperature
-          place: [0, 54]
-          size: [175, 66]
-          endpoint: "https://glacier.org/scripts/post_temp.cgi"
-          subname: nps
+      - type: logo
+        place: [140, 944]
+        size: [612, 137]
+        img: overlays/logo-shaded.png
+        subname: nps
+      - type: logo
+        place: [0, 944]
+        size: [612, 137]
+        img: overlays/logo-shaded.png
 ```
+
+Each entry in `logo_placements` produces one published image; `subname` is appended to the output filename (e.g. `lpp_nps.jpg`). Setting `blackout: true` on a webcam publishes plain black frames in place of the feed (used when a camera is misaimed).
 
 ### Overlay Types
 
 - **Single overlays**: Apply one logo or temperature overlay
-- **Composite overlays**: Apply multiple overlays in sequence to create combined images
+- **Composite overlays**: Nest overlays in a list to combine them into one image (see `webcams-temperature.yaml` for a logo + temperature example)
 - **Auto-positioning**: Temperature overlays can auto-position to top-right corner
 
 ## Environment Setup
@@ -63,10 +63,20 @@ python main.py
 
 **Production (cron):**
 ```bash
-* * * * * cd /path/to/GNPC-webcams && ./main.py
+* * * * * cd /path/to/GNPC-webcams && .venv/bin/python main.py >/dev/null
 ```
 
-The system processes 6 webcam instances using threading for parallel processing, with automatic retry logic for FTP operations and comprehensive logging.
+Errors are printed to stderr so cron emails them even with stdout discarded. The production `.venv` is built with `uv sync --no-dev` from `uv.lock`; cron invokes the venv's interpreter directly, so uv itself is only needed when setting up or updating dependencies.
+
+The system processes 5 webcam images and 1 overnight timelapse video using threading for parallel processing, with automatic retry logic for FTP operations and comprehensive logging. Connections use FTPS when the server supports it, falling back to plain FTP. All file paths resolve relative to the repository directory, so the cron `cd` is optional.
+
+## Testing
+
+```bash
+uv run pytest
+```
+
+Unit tests in `tests/` cover config parsing and overlay composition without touching the network. `tests/manual/` holds standalone debug scripts that hit the live FTP server; run them directly with Python when needed.
 
 ## File Structure
 
@@ -76,4 +86,5 @@ fonts/             # Font files for timestamp rendering
 webcams.yaml       # All webcam and overlay configurations
 config.py          # Configuration dataclasses and YAML loading
 environment.env    # Credentials and settings (not in repo)
+tests/             # Unit tests (pytest) and manual debug scripts
 ```
