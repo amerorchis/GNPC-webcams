@@ -7,6 +7,7 @@ import io
 import logging
 import os
 from datetime import datetime
+from ftplib import error_perm
 
 import ffmpeg
 from dotenv import load_dotenv
@@ -124,10 +125,17 @@ class AllskyVideo(Webcam):
             if self.file_name_on_server not in ftp.nlst():
                 return
 
-            self.available = True  # Mark that the video was found.
-
-            # Save the file into the buffer.
-            ftp.retrbinary(f"RETR {self.file_name_on_server}", self.file_buffer.write)
+            # Save the file into the buffer. The file can disappear between the
+            # nlst() check above and this RETR (an overlapping cron run deletes
+            # it after processing), so treat a failed download as "not
+            # available" instead of letting the 550 crash the run.
+            try:
+                ftp.retrbinary(
+                    f"RETR {self.file_name_on_server}", self.file_buffer.write
+                )
+            except error_perm as e:
+                logger.warning(f"{self.name}: could not download video: {e}")
+                return
             self.file_buffer.seek(0)
 
             self._set_modification_time(ftp)  # Set the file modification time.
@@ -135,6 +143,10 @@ class AllskyVideo(Webcam):
             # Save the video to disk
             with open(self.raw_video_path, "wb") as allsky:
                 allsky.write(self.file_buffer.getvalue())
+
+            # Only mark available after a fully successful download, so a
+            # partial/failed get() never leaves stale state for later steps.
+            self.available = True
         finally:
             ftp.quit()
 
@@ -186,8 +198,13 @@ class AllskyVideo(Webcam):
         it works with the same API as the webcams this way.
         """
 
-        # Make sure there is a video to upload
+        # Make sure there is a processed video ready to upload. self.logoed is
+        # only set to a file path by add_logo(); if it's still the initial
+        # BytesIO there is nothing to upload.
         if not self.available:
+            return
+        if not isinstance(self.logoed, str) or not os.path.exists(self.logoed):
+            logger.warning(f"{self.name}: no processed video to upload, skipping")
             return
 
         file_path = f"{self.name}.mp4"  # Desired file name on server
