@@ -8,7 +8,7 @@ import os
 import socket
 import threading
 from datetime import datetime
-from ftplib import FTP, FTP_TLS, error_perm
+from ftplib import FTP, FTP_TLS, error_perm, error_temp
 from time import sleep
 from zoneinfo import ZoneInfo
 
@@ -115,7 +115,11 @@ class Webcam:
                 socket.error,
                 ConnectionResetError,
                 OSError,
+                error_temp,
             ) as e:
+                # error_temp covers transient 4xx replies (e.g. a 425 when the
+                # server can't open a passive data socket) — retryable, unlike
+                # the 5xx error_perm handled above.
                 logger.warning(
                     f"  {self.name}: Download failed (attempt {attempt + 1}): {e}"
                 )
@@ -209,6 +213,7 @@ class Webcam:
                         socket.error,
                         ConnectionResetError,
                         OSError,
+                        error_temp,
                     ) as e:
                         logger.warning(
                             f"  {self.name}: Upload failed for {file_name} "
