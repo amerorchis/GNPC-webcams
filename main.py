@@ -76,7 +76,13 @@ def main():
 if __name__ == "__main__":
     try:
         for i in range(2):
+            if i:
+                # Idle between rounds without holding FTP sessions. The server
+                # allows only a few connections per IP and cron starts the next
+                # run before this one exits, so a process that sits on its
+                # connections while sleeping starves the runs overlapping it.
+                Webcam._close_connections()
+                sleep(45)
             main()
-            sleep(45)
     finally:
         Webcam._close_connections()

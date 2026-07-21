@@ -13,7 +13,7 @@ import ffmpeg
 from dotenv import load_dotenv
 
 from paths import resolve_path
-from Webcam import Webcam, connect_ftp
+from Webcam import Webcam, close_ftp, connect_ftp
 
 load_dotenv(resolve_path("environment.env"))
 
@@ -102,7 +102,7 @@ class AllskyVideo(Webcam):
 
                 return self.processed_today
             finally:
-                ftp.quit()
+                close_ftp(ftp)
 
         except Exception:
             # If we can't connect or check, assume not processed to be safe
@@ -148,7 +148,7 @@ class AllskyVideo(Webcam):
             # partial/failed get() never leaves stale state for later steps.
             self.available = True
         finally:
-            ftp.quit()
+            close_ftp(ftp)
 
     def add_logo(self):
         """
@@ -234,7 +234,7 @@ class AllskyVideo(Webcam):
                         pass  # Ignore cleanup errors
                     raise rename_error
         finally:
-            ftp.quit()
+            close_ftp(ftp)
 
         self.upload = f"https://glacier.org/webcam/{file_path}"  # URL for the video
 
@@ -255,7 +255,7 @@ class AllskyVideo(Webcam):
             if self.file_name_on_server in ftp.nlst():
                 ftp.delete(self.file_name_on_server)
         finally:
-            ftp.quit()
+            close_ftp(ftp)
 
 
 if __name__ == "__main__":

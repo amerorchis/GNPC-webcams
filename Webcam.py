@@ -5,6 +5,7 @@ Custom class to represent an individual webcam.
 import io
 import logging
 import os
+import random
 import socket
 import threading
 from datetime import datetime
@@ -23,18 +24,74 @@ logger = logging.getLogger(__name__)
 load_dotenv(resolve_path("environment.env"))
 
 
+# The server allows only a handful of simultaneous connections per IP, so every
+# socket this process opens has to be accounted for. Once a connect attempt tells
+# us whether the server speaks explicit TLS, remember the answer: re-probing on
+# every connect would double the sockets opened by each camera thread.
+_ftps_supported = None
+
+
+def close_ftp(ftp):
+    """Release an FTP connection, sending QUIT if the server is still listening.
+
+    Dropping the reference is not enough — without a QUIT the server keeps the
+    session (and its connection slot) until an idle timeout expires.
+    """
+    if ftp is None:
+        return
+    try:
+        ftp.quit()
+    except Exception:
+        try:
+            ftp.close()
+        except Exception:
+            pass
+
+
+def _is_connection_limit_error(error):
+    """True for the server's "421 Too many connections from this IP" refusal."""
+    return "too many connections" in str(error).lower()
+
+
+def retry_delay_for(base_delay, attempt, error):
+    """How long to wait before the next FTP retry.
+
+    Backs off further each attempt, stretches the wait when the server is
+    refusing connections outright (nothing will succeed until other threads let
+    go of their slots), and jitters so the camera threads don't all come back at
+    the same instant and re-trip the per-IP limit.
+    """
+    delay = base_delay * (attempt + 1)
+    if _is_connection_limit_error(error):
+        delay *= 4
+    return delay + random.uniform(0, delay)
+
+
 def connect_ftp(server, user, password):
     """
     Connect over FTPS (explicit TLS) when the server supports it, falling back
     to plain FTP so credentials are encrypted whenever possible.
     """
-    try:
-        ftps = FTP_TLS(server, timeout=30)
-        ftps.login(user, password)
-        ftps.prot_p()  # Encrypt the data channel too
-        return ftps
-    except Exception as e:
-        logger.warning(f"FTPS unavailable ({e}), falling back to plain FTP")
+    global _ftps_supported
+
+    if _ftps_supported is not False:
+        ftps = None
+        try:
+            ftps = FTP_TLS(server, timeout=30)
+            ftps.login(user, password)
+            ftps.prot_p()  # Encrypt the data channel too
+            _ftps_supported = True
+            return ftps
+        except (error_temp, socket.gaierror, TimeoutError):
+            # A busy server (421), a DNS failure or a timeout says nothing about
+            # TLS support. Retrying in plain FTP would fail the same way while
+            # burning a second connection slot, so surface the error instead.
+            close_ftp(ftps)
+            raise
+        except Exception as e:
+            close_ftp(ftps)
+            _ftps_supported = False
+            logger.warning(f"FTPS unavailable ({e}), falling back to plain FTP")
 
     ftp = FTP(server, timeout=30)
     ftp.login(user, password)
@@ -123,15 +180,18 @@ class Webcam:
                 logger.warning(
                     f"  {self.name}: Download failed (attempt {attempt + 1}): {e}"
                 )
-                # Reset connection on error
+                # Reset connection on error, closing it so the server releases
+                # its slot instead of holding the session until it times out.
+                # Closed while holding the lock so the slot is given back before
+                # another camera thread opens its replacement.
                 with self._download_lock:
-                    self.__class__._download_ftp = None
+                    stale, self.__class__._download_ftp = self._download_ftp, None
+                    close_ftp(stale)
                 self.file_buffer = io.BytesIO()  # Reset buffer
                 if attempt < max_retries - 1:
-                    logger.info(
-                        f"  {self.name}: Retrying download in {retry_delay}s..."
-                    )
-                    sleep(retry_delay)
+                    delay = retry_delay_for(retry_delay, attempt, e)
+                    logger.info(f"  {self.name}: Retrying download in {delay:.1f}s...")
+                    sleep(delay)
                 else:
                     logger.error(
                         f"  {self.name}: Download failed after {max_retries} tries"
@@ -219,13 +279,17 @@ class Webcam:
                             f"  {self.name}: Upload failed for {file_name} "
                             f"(attempt {attempt + 1}): {e}"
                         )
-                        # Reset connection on error
-                        self.__class__._upload_ftp = None
+                        # Reset connection on error, closing it so the server
+                        # releases its slot instead of holding the session until
+                        # it times out.
+                        stale, self.__class__._upload_ftp = self._upload_ftp, None
+                        close_ftp(stale)
                         if attempt < max_retries - 1:
+                            delay = retry_delay_for(retry_delay, attempt, e)
                             logger.info(
-                                f"  {self.name}: Retrying upload in {retry_delay}s..."
+                                f"  {self.name}: Retrying upload in {delay:.1f}s..."
                             )
-                            sleep(retry_delay)
+                            sleep(delay)
                         else:
                             logger.error(
                                 f"  {self.name}: Upload failed after {max_retries}x"
@@ -374,17 +438,9 @@ class Webcam:
     def _close_connections(cls):
         """Close all shared FTP connections."""
         with cls._download_lock:
-            if cls._download_ftp:
-                try:
-                    cls._download_ftp.quit()
-                except Exception as e:
-                    logger.error(f"    Failed to close download FTP connection: {e}")
-                cls._download_ftp = None
+            close_ftp(cls._download_ftp)
+            cls._download_ftp = None
 
         with cls._upload_lock:
-            if cls._upload_ftp:
-                try:
-                    cls._upload_ftp.quit()
-                except Exception as e:
-                    logger.error(f"    Failed to close upload FTP connection: {e}")
-                cls._upload_ftp = None
+            close_ftp(cls._upload_ftp)
+            cls._upload_ftp = None
