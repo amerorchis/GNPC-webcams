@@ -25,6 +25,7 @@ from config import (
     create_webcam_from_config,
     load_config,
 )
+from single_instance import AlreadyRunning, SingleInstance
 from Webcam import Webcam
 
 # Load configuration from YAML
@@ -41,6 +42,12 @@ allsky_videos = [
 
 # Combine all cameras
 cams = webcams + allsky_videos
+
+# Seconds to idle between the two rounds of a run. Cron fires every minute and
+# only one run executes at a time, so a run has to finish inside its minute or
+# the next tick is skipped by the lock. Two rounds plus this gap must leave room
+# for the slowest round.
+ROUND_INTERVAL = 25
 
 
 def handle_cam(cam: Webcam):
@@ -75,14 +82,20 @@ def main():
 
 if __name__ == "__main__":
     try:
-        for i in range(2):
-            if i:
-                # Idle between rounds without holding FTP sessions. The server
-                # allows only a few connections per IP and cron starts the next
-                # run before this one exits, so a process that sits on its
-                # connections while sleeping starves the runs overlapping it.
+        with SingleInstance():
+            try:
+                for i in range(2):
+                    if i:
+                        # Idle between rounds without holding FTP sessions. The
+                        # server allows only a few connections per IP, so a
+                        # process that sits on its connections while sleeping
+                        # starves anything else using them.
+                        Webcam._close_connections()
+                        sleep(ROUND_INTERVAL)
+                    main()
+            finally:
                 Webcam._close_connections()
-                sleep(45)
-            main()
-    finally:
-        Webcam._close_connections()
+    except AlreadyRunning as e:
+        # Not an error: the previous run is still working and the next cron tick
+        # will cover this cycle. Stays off stderr so cron doesn't email it.
+        logger.info(f"Skipping run: {e}")
