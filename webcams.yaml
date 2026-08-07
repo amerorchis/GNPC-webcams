@@ -65,15 +65,19 @@ webcams:
   - name: mg
     file_name_on_server: mg.jpg
     logo_placements:
-      - type: logo
-        place: [140, 944]
-        size: [612, 137]
-        img: overlays/logo-shaded.png
-        subname: nps
-      - type: logo
-        place: [0, 944]
-        size: [612, 137]
-        img: overlays/logo-shaded.png
+      # NPS feed: logo only, no air quality widget.
+      - - type: logo
+          place: [140, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+          subname: nps
+      # GNPC feed: logo plus the Many Glacier Ranger Station air quality widget.
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111457  # PurpleAir "Many Glacier Ranger Station"
 
 allsky_videos:
   - name: allsky

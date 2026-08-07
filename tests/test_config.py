@@ -1,11 +1,15 @@
 """Unit tests for YAML config loading and object construction."""
 
+import pytest
+
 from config import (
+    AirQualityConfig,
     LogoConfig,
     create_webcam_from_config,
     load_config,
+    parse_overlay,
 )
-from Overlays import CompositeOverlay, Logo
+from Overlays import AirQuality, CompositeOverlay, Logo
 from Webcam import Webcam
 
 
@@ -61,3 +65,37 @@ def test_single_item_groups_unwrap_to_plain_overlays():
     # smv's groups each contain one logo, so they should not become composites
     webcam = create_webcam_from_config(by_name["smv"])
     assert all(not isinstance(o, CompositeOverlay) for o in webcam.overlays)
+
+
+def test_unknown_overlay_type_is_rejected():
+    with pytest.raises(ValueError):
+        parse_overlay({"type": "sparkles", "place": [0, 0], "size": [1, 1]})
+
+
+def test_mg_air_quality_only_on_the_non_nps_feed():
+    config = load_config("webcams.yaml")
+    by_name = {w.name: w for w in config.webcams}
+
+    groups = by_name["mg"].logo_placements
+    nps_group = [g for g in groups if any(o.subname == "nps" for o in g)]
+    gnpc_group = [g for g in groups if not any(o.subname == "nps" for o in g)]
+    assert len(nps_group) == 1 and len(gnpc_group) == 1
+
+    assert not any(isinstance(o, AirQualityConfig) for o in nps_group[0])
+    air_quality = [o for o in gnpc_group[0] if isinstance(o, AirQualityConfig)]
+    assert len(air_quality) == 1
+    # PurpleAir "Many Glacier Ranger Station"
+    assert air_quality[0].sensor_index == 111457
+
+
+def test_mg_builds_a_composite_for_the_gnpc_feed_only():
+    config = load_config("webcams.yaml")
+    by_name = {w.name: w for w in config.webcams}
+
+    webcam = create_webcam_from_config(by_name["mg"])
+    by_file = {o.get_overlayed_img("mg")[1]: o for o in webcam.overlays}
+
+    assert isinstance(by_file["mg_nps.jpg"], Logo)
+    composite = by_file["mg.jpg"]
+    assert isinstance(composite, CompositeOverlay)
+    assert [type(o) for o in composite.overlays] == [Logo, AirQuality]

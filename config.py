@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple, Union
 import yaml
 
 from AllskyVideo import AllskyVideo
-from Overlays import Logo, Temperature
+from Overlays import AirQuality, Logo, Temperature
 from paths import resolve_path
 from Webcam import Webcam
 
@@ -53,14 +53,42 @@ class TemperatureConfig:
 
 
 @dataclass
+class AirQualityConfig:
+    """Configuration for an AirQuality overlay."""
+
+    sensor_index: int
+    place: Optional[Tuple[int, int]] = None
+    size: Optional[Tuple[int, int]] = None
+    subname: Optional[str] = None
+    metric: str = "aqi"
+    api_key_env: str = "PURPLE_KEY"
+    margin: Tuple[int, int] = (24, 24)
+    font_path: str = "fonts/SourceSansVariable-Bold.ttf"
+    font_size: int = 34
+    label: str = "AQI"
+    label_font_size: int = 19
+    bg_color: Tuple[int, int, int, int] = (0, 0, 0, 140)
+    text_color: Tuple[int, int, int] = (255, 255, 255)
+    dot_radius: int = 12
+    dot_outline_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 90)
+    padding: Tuple[int, int] = (16, 12)
+    gap: int = 11
+    corner_radius: int = 12
+    cache_seconds: int = 300
+    max_reading_age: int = 3600
+    timeout: int = 10
+
+
+OverlayConfig = Union[LogoConfig, TemperatureConfig, AirQualityConfig]
+
+
+@dataclass
 class WebcamConfig:
     """Configuration for a webcam."""
 
     name: str
     file_name_on_server: str
-    logo_placements: List[
-        Union[LogoConfig, TemperatureConfig, List[Union[LogoConfig, TemperatureConfig]]]
-    ]
+    logo_placements: List[Union[OverlayConfig, List[OverlayConfig]]]
     blackout: bool = False
 
 
@@ -80,6 +108,22 @@ class AppConfig:
 
     webcams: List[WebcamConfig] = field(default_factory=list)
     allsky_videos: List[AllskyVideoConfig] = field(default_factory=list)
+
+
+OVERLAY_CONFIG_TYPES = {
+    "logo": LogoConfig,
+    "temperature": TemperatureConfig,
+    "air_quality": AirQualityConfig,
+}
+
+
+def parse_overlay(overlay_data: dict) -> OverlayConfig:
+    """Build an overlay config dataclass from one YAML overlay entry."""
+    overlay_type = overlay_data.get("type")
+    config_class = OVERLAY_CONFIG_TYPES.get(overlay_type)
+    if config_class is None:
+        raise ValueError(f"Unknown overlay type: {overlay_type!r}")
+    return config_class(**{k: v for k, v in overlay_data.items() if k != "type"})
 
 
 def load_config(config_file: str = "webcams.yaml") -> AppConfig:
@@ -104,36 +148,12 @@ def load_config(config_file: str = "webcams.yaml") -> AppConfig:
         logo_placements = []
         for placement in webcam_data.get("logo_placements", []):
             if isinstance(placement, list):
-                # Group of overlays
-                group = []
-                for overlay in placement:
-                    if overlay["type"] == "logo":
-                        group.append(
-                            LogoConfig(
-                                **{k: v for k, v in overlay.items() if k != "type"}
-                            )
-                        )
-                    elif overlay["type"] == "temperature":
-                        group.append(
-                            TemperatureConfig(
-                                **{k: v for k, v in overlay.items() if k != "type"}
-                            )
-                        )
-                logo_placements.append(group)
+                # Group of overlays composited into one output image
+                logo_placements.append(
+                    [parse_overlay(overlay) for overlay in placement]
+                )
             else:
-                # Single overlay
-                if placement["type"] == "logo":
-                    logo_placements.append(
-                        LogoConfig(
-                            **{k: v for k, v in placement.items() if k != "type"}
-                        )
-                    )
-                elif placement["type"] == "temperature":
-                    logo_placements.append(
-                        TemperatureConfig(
-                            **{k: v for k, v in placement.items() if k != "type"}
-                        )
-                    )
+                logo_placements.append(parse_overlay(placement))
 
         webcam = WebcamConfig(
             name=webcam_data["name"],
@@ -159,7 +179,7 @@ def load_config(config_file: str = "webcams.yaml") -> AppConfig:
     return config
 
 
-def create_overlay_from_config(overlay_config: Union[LogoConfig, TemperatureConfig]):
+def create_overlay_from_config(overlay_config: OverlayConfig):
     """Create an overlay object from configuration."""
 
     if isinstance(overlay_config, LogoConfig):
@@ -169,6 +189,8 @@ def create_overlay_from_config(overlay_config: Union[LogoConfig, TemperatureConf
         kwargs["bg_color"] = tuple(kwargs["bg_color"])
         kwargs["text_color"] = tuple(kwargs["text_color"])
         return Temperature(**kwargs)
+    elif isinstance(overlay_config, AirQualityConfig):
+        return AirQuality(**asdict(overlay_config))
     else:
         raise ValueError(f"Unknown overlay config type: {type(overlay_config)}")
 
