@@ -411,10 +411,11 @@ def _draw_tracked_text(draw, xy, text, font, fill, tracking):
 class AirQuality(Overlay):
     """Air quality widget driven by a PurpleAir sensor.
 
-    Draws a compact pill holding a severity dot colored by AQI category and the
-    sensor's 10-minute reading. When the reading can't be fetched — no API key,
-    a failed request, a sensor that has stopped reporting — the image passes
-    through untouched rather than publishing a stale or blank number.
+    Draws a compact pill: a severity dot colored by AQI category sitting beside
+    the sensor's 10-minute reading, with the category wording centered on its
+    own line beneath. When the reading can't be fetched — no API key, a failed
+    request, a sensor that has stopped reporting — the image passes through
+    untouched rather than publishing a stale or blank number.
     """
 
     def __init__(
@@ -605,69 +606,99 @@ class AirQuality(Overlay):
             )
         return pm25
 
-    def _render_text_block(self, value_text, category_text, scale):
-        """Render the reading (and category wording) cropped to its own ink.
+    def _render_reading(self, value_text, scale):
+        """The number and its unit label, cropped to their own ink.
 
         Cropping to the ink rather than to the font's line box is what lets the
-        caller center the block against the dot: font metrics reserve space for
-        ascenders and descenders that neither digits nor small caps ever use.
+        caller center this against the dot: font metrics reserve space for
+        ascenders and descenders that digits never use.
         """
         font = ImageFont.truetype(resolve_path(self.font_path), self.font_size * scale)
         label_font = ImageFont.truetype(
             resolve_path(self.font_path), self.label_font_size * scale
         )
-        category_font = ImageFont.truetype(
-            resolve_path(self.font_path), self.category_font_size * scale
-        )
         gap = self.gap * scale
-        tracking = self.category_tracking * scale
 
         measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
         value_width = measure.textlength(value_text, font=font)
         label_width = (
             gap + measure.textlength(self.label, font=label_font) if self.label else 0
         )
-        reading_width = value_width + label_width
-        category_width = (
-            _tracked_text_width(measure, category_text, category_font, tracking)
-            if category_text
-            else 0
-        )
 
         ascent, descent = font.getmetrics()
-        category_ascent, category_descent = category_font.getmetrics()
-        width = math.ceil(max(reading_width, category_width))
-        height = math.ceil(
-            ascent
-            + descent
-            + self.line_gap * scale
-            + category_ascent
-            + category_descent
+        canvas = Image.new(
+            "RGBA",
+            (math.ceil(value_width + label_width) + scale, ascent + descent),
+            (0, 0, 0, 0),
         )
-
-        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
-
-        # Both lines are centered on each other; the reading is usually the
-        # wider of the two, but "Sensitive Groups" outruns a two-digit AQI.
-        reading_x = (width - reading_width) / 2
-        draw.text(
-            (reading_x, ascent),
-            value_text,
-            font=font,
-            fill=self.text_color,
-            anchor="ls",
-        )
+        draw.text((0, ascent), value_text, font=font, fill=self.text_color, anchor="ls")
         if self.label:
             # Sharing a baseline rather than a center line: the small label is
             # meant to read as a unit with the number, not float beside it.
             draw.text(
-                (reading_x + value_width + gap, ascent),
+                (value_width + gap, ascent),
                 self.label,
                 font=label_font,
                 fill=self.text_color,
                 anchor="ls",
             )
+        return canvas.crop(canvas.getbbox())
+
+    def _render_content(self, value_text, color, category_text, scale):
+        """Lay out the dot and reading on one line, the category beneath.
+
+        Keeping the dot inline with the number ties the color to the value it
+        describes and lets the category wording use the badge's full width
+        instead of being indented past the dot.
+        """
+        category_font = ImageFont.truetype(
+            resolve_path(self.font_path), self.category_font_size * scale
+        )
+        radius = self.dot_radius * scale
+        gap = self.gap * scale
+        tracking = self.category_tracking * scale
+
+        reading = self._render_reading(value_text, scale)
+        top_width = 2 * radius + gap + reading.width
+        top_height = max(2 * radius, reading.height)
+
+        measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        category_width = (
+            _tracked_text_width(measure, category_text, category_font, tracking)
+            if category_text
+            else 0
+        )
+        category_ascent, category_descent = category_font.getmetrics()
+
+        width = math.ceil(max(top_width, category_width))
+        height = math.ceil(
+            top_height
+            + (
+                self.line_gap * scale + category_ascent + category_descent
+                if category_text
+                else 0
+            )
+        )
+
+        content = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(content)
+
+        # Each line is centered on the other: the reading is wider for a short
+        # category like "Good", the category wider for "Sensitive Groups".
+        top_x = (width - top_width) / 2
+        middle = top_height / 2
+        draw.ellipse(
+            (top_x, middle - radius, top_x + 2 * radius, middle + radius),
+            fill=color,
+            outline=self.dot_outline_color,
+            width=max(1, scale // 2),
+        )
+        content.paste(
+            reading,
+            (int(top_x + 2 * radius + gap), int(middle - reading.height / 2)),
+            reading,
+        )
         if category_text:
             _draw_tracked_text(
                 draw,
@@ -678,7 +709,7 @@ class AirQuality(Overlay):
                 tracking,
             )
 
-        return canvas.crop(canvas.getbbox())
+        return content.crop(content.getbbox())
 
     def _render_widget(self, value_text, color, category_text=None):
         """Draw the widget on a transparent canvas sized to its contents.
@@ -688,44 +719,18 @@ class AirQuality(Overlay):
         """
         scale = 4
         pad_x, pad_y = (self.padding[0] * scale, self.padding[1] * scale)
-        radius = self.dot_radius * scale
-        gap = self.gap * scale
 
-        block = self._render_text_block(value_text, category_text, scale)
-        content_height = max(2 * radius, block.height)
-        width = int(pad_x * 2 + 2 * radius + gap + block.width)
-        height = int(content_height + pad_y * 2)
+        content = self._render_content(value_text, color, category_text, scale)
+        width = content.width + 2 * pad_x
+        height = content.height + 2 * pad_y
 
         widget = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(widget)
-        draw.rounded_rectangle(
+        ImageDraw.Draw(widget).rounded_rectangle(
             (0, 0, width - 1, height - 1),
             radius=self.corner_radius * scale,
             fill=self.bg_color,
         )
-
-        middle = height / 2
-        dot_center_x = pad_x + radius
-        draw.ellipse(
-            (
-                dot_center_x - radius,
-                middle - radius,
-                dot_center_x + radius,
-                middle + radius,
-            ),
-            fill=color,
-            outline=self.dot_outline_color,
-            width=max(1, scale // 2),
-        )
-
-        widget.paste(
-            block,
-            (
-                int(dot_center_x + radius + gap),
-                int((height - block.height) / 2),
-            ),
-            block,
-        )
+        widget.paste(content, (pad_x, pad_y), content)
 
         return widget.resize((width // scale, height // scale), Image.LANCZOS)
 
