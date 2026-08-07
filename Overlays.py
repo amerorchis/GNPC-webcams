@@ -292,14 +292,16 @@ US_AQI_BREAKPOINTS = (
     (225.5, 325.4, 301, 500),
 )
 
-# Official AQI category colors, keyed by the top of each category.
-AQI_CATEGORY_COLORS = (
-    (50, (0, 228, 0)),  # Good
-    (100, (255, 255, 0)),  # Moderate
-    (150, (255, 126, 0)),  # Unhealthy for sensitive groups
-    (200, (255, 0, 0)),  # Unhealthy
-    (300, (143, 63, 151)),  # Very unhealthy
-    (500, (126, 0, 35)),  # Hazardous
+# Official AQI categories: (top of the category, color, badge wording). The
+# wording is shortened from the EPA's own names to fit a webcam corner —
+# "Unhealthy for Sensitive Groups" would nearly double the badge width.
+AQI_CATEGORIES = (
+    (50, (0, 228, 0), "Good"),
+    (100, (255, 255, 0), "Moderate"),
+    (150, (255, 126, 0), "Sensitive Groups"),
+    (200, (255, 0, 0), "Unhealthy"),
+    (300, (143, 63, 151), "Very Unhealthy"),
+    (500, (126, 0, 35), "Hazardous"),
 )
 
 # One cached PurpleAir reading per sensor, shared by every thread in the run and
@@ -323,12 +325,81 @@ def pm25_to_aqi(pm25):
     return 500
 
 
+def aqi_category(aqi):
+    """The (color, wording) of the AQI category an AQI value falls in."""
+    for category_max, color, name in AQI_CATEGORIES:
+        if aqi <= category_max:
+            return color, name
+    return AQI_CATEGORIES[-1][1], AQI_CATEGORIES[-1][2]
+
+
 def aqi_color(aqi):
     """The AQI category color for an AQI value."""
-    for category_max, color in AQI_CATEGORY_COLORS:
-        if aqi <= category_max:
-            return color
-    return AQI_CATEGORY_COLORS[-1][1]
+    return aqi_category(aqi)[0]
+
+
+def epa_correct_pm25(pa_cf1, humidity):
+    """Apply the EPA's extended US-wide correction to a PurpleAir reading.
+
+    Barkjohn et al. (2021), extended in 2022 for wildfire-scale concentrations;
+    this is the correction AirNow applies to PurpleAir data on its Fire and
+    Smoke Map. It takes the CF=1 channel and a relative humidity, and returns an
+    estimate of what a reference monitor would report.
+    """
+    pa = max(pa_cf1, 0.0)
+    rh = 50.0 if humidity is None else humidity
+
+    if pa < 30:
+        return 0.524 * pa - 0.0862 * rh + 5.75
+    if pa < 50:
+        # Blend between the low and mid slopes so the curve stays continuous.
+        blend = pa / 20 - 3 / 2
+        return (0.786 * blend + 0.524 * (1 - blend)) * pa - 0.0862 * rh + 5.75
+    if pa < 210:
+        return 0.786 * pa - 0.0862 * rh + 5.75
+    if pa < 260:
+        # Blend again into the high-concentration curve.
+        blend = pa / 50 - 21 / 5
+        return (
+            (0.69 * blend + 0.786 * (1 - blend)) * pa
+            - 0.0862 * rh * (1 - blend)
+            + 2.966 * blend
+            + 5.75 * (1 - blend)
+            + 8.84e-4 * pa**2 * blend
+        )
+    return 2.966 + 0.69 * pa + 8.84e-4 * pa**2
+
+
+def _cf1_ratio(pm25_atm, pm25_cf1):
+    """How much higher the CF=1 channel reads than the ATM channel right now.
+
+    The two are identical in clean air and settle at roughly 3:2 in smoke.
+    Clamped because a single noisy pair of instantaneous samples must not be
+    able to scale the 10-minute average into nonsense.
+    """
+    if not pm25_atm or not pm25_cf1 or pm25_atm <= 0:
+        return 1.0
+    return min(max(pm25_cf1 / pm25_atm, 1.0), 1.6)
+
+
+def _tracked_text_width(draw, text, font, tracking):
+    """Width of text drawn with extra spacing between every glyph."""
+    if not text:
+        return 0
+    glyphs = sum(draw.textlength(character, font=font) for character in text)
+    return glyphs + tracking * (len(text) - 1)
+
+
+def _draw_tracked_text(draw, xy, text, font, fill, tracking):
+    """Draw text one glyph at a time, spaced out.
+
+    Small uppercase text set solid is hard to read at webcam scale; letting it
+    breathe costs nothing and PIL has no tracking of its own.
+    """
+    x, y = xy
+    for character in text:
+        draw.text((x, y), character, font=font, fill=fill, anchor="ls")
+        x += draw.textlength(character, font=font) + tracking
 
 
 class AirQuality(Overlay):
@@ -347,20 +418,25 @@ class AirQuality(Overlay):
         size=None,
         subname=None,
         metric="aqi",
+        conversion="epa",
         api_key_env="PURPLE_KEY",
         margin=(24, 24),
         font_path="fonts/SourceSansVariable-Bold.ttf",
         font_size=34,
         label="AQI",
         label_font_size=19,
+        show_category=True,
+        category_font_size=16,
+        category_tracking=1.4,
+        line_gap=3,
         bg_color=(0, 0, 0, 140),
         text_color=(255, 255, 255),
-        dot_radius=12,
+        dot_radius=15,
         dot_outline_color=(255, 255, 255, 90),
         padding=(16, 12),
         gap=11,
         corner_radius=12,
-        cache_seconds=300,
+        cache_seconds=600,
         max_reading_age=3600,
         timeout=10,
     ):
@@ -368,12 +444,17 @@ class AirQuality(Overlay):
         self.place_auto = place is None
         self.sensor_index = sensor_index
         self.metric = metric
+        self.conversion = conversion
         self.api_key_env = api_key_env
         self.margin = tuple(margin)
         self.font_path = font_path
         self.font_size = font_size
         self.label = label
         self.label_font_size = label_font_size
+        self.show_category = show_category
+        self.category_font_size = category_font_size
+        self.category_tracking = category_tracking
+        self.line_gap = line_gap
         self.bg_color = tuple(bg_color)
         self.text_color = tuple(text_color)
         self.dot_radius = dot_radius
@@ -403,12 +484,12 @@ class AirQuality(Overlay):
 
         if time.time() - cached.get("fetched_at", 0) > self.cache_seconds:
             return None
-        return cached.get("pm25")
+        return cached.get("reading")
 
-    def _write_cache(self, pm25):
+    def _write_cache(self, reading):
         if self.cache_seconds <= 0:
             return
-        payload = {"pm25": pm25, "fetched_at": time.time()}
+        payload = {"reading": reading, "fetched_at": time.time()}
         # Written via a uniquely named temp file so overlapping cron runs can't
         # read a half-written cache or clobber each other's rename.
         temp_path = f"{self._cache_path}.{os.getpid()}.tmp"
@@ -423,8 +504,12 @@ class AirQuality(Overlay):
             except OSError:
                 pass
 
-    def fetch_pm25(self):
-        """The sensor's 10-minute average PM2.5, or None if it is unavailable."""
+    def fetch_reading(self):
+        """The sensor's latest numbers, or None if they are unavailable.
+
+        Returns the 10-minute PM2.5 average, the humidity, and the ratio between
+        the sensor's two PM2.5 channels — see `pm25` for why that ratio matters.
+        """
         api_key = os.getenv(self.api_key_env)
         if not api_key:
             logger.warning(
@@ -442,7 +527,11 @@ class AirQuality(Overlay):
                 response = requests.get(
                     PURPLE_AIR_SENSOR_URL.format(sensor_index=self.sensor_index),
                     headers={"X-API-Key": api_key},
-                    params={"fields": "pm2.5_10minute,last_seen"},
+                    params={
+                        "fields": (
+                            "pm2.5_10minute,pm2.5_atm,pm2.5_cf_1,humidity,last_seen"
+                        )
+                    },
                     timeout=self.timeout,
                 )
                 response.raise_for_status()
@@ -475,10 +564,112 @@ class AirQuality(Overlay):
                 )
                 return None
 
-            self._write_cache(pm25)
-            return pm25
+            reading = {
+                "pm25": pm25,
+                "humidity": sensor.get("humidity"),
+                "cf1_ratio": _cf1_ratio(
+                    sensor.get("pm2.5_atm"), sensor.get("pm2.5_cf_1")
+                ),
+            }
+            self._write_cache(reading)
+            return reading
 
-    def _render_widget(self, value_text, color):
+    def pm25(self):
+        """The PM2.5 concentration to publish, or None if it is unavailable.
+
+        With the default EPA conversion this is not the sensor's raw number: the
+        correction is defined against the CF=1 channel, but the API only offers
+        10-minute averages of the ATM channel. The two channels track each other
+        by a fixed ratio at any given concentration, so the current
+        CF=1-to-ATM ratio converts the 10-minute average before correcting it.
+        """
+        reading = self.fetch_reading()
+        if reading is None:
+            return None
+
+        pm25 = reading["pm25"]
+        if self.conversion == "epa":
+            pm25 = epa_correct_pm25(
+                pm25 * reading.get("cf1_ratio", 1.0), reading.get("humidity")
+            )
+        return pm25
+
+    def _render_text_block(self, value_text, category_text, scale):
+        """Render the reading (and category wording) cropped to its own ink.
+
+        Cropping to the ink rather than to the font's line box is what lets the
+        caller center the block against the dot: font metrics reserve space for
+        ascenders and descenders that neither digits nor small caps ever use.
+        """
+        font = ImageFont.truetype(resolve_path(self.font_path), self.font_size * scale)
+        label_font = ImageFont.truetype(
+            resolve_path(self.font_path), self.label_font_size * scale
+        )
+        category_font = ImageFont.truetype(
+            resolve_path(self.font_path), self.category_font_size * scale
+        )
+        gap = self.gap * scale
+        tracking = self.category_tracking * scale
+
+        measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        value_width = measure.textlength(value_text, font=font)
+        label_width = (
+            gap + measure.textlength(self.label, font=label_font) if self.label else 0
+        )
+        reading_width = value_width + label_width
+        category_width = (
+            _tracked_text_width(measure, category_text, category_font, tracking)
+            if category_text
+            else 0
+        )
+
+        ascent, descent = font.getmetrics()
+        category_ascent, category_descent = category_font.getmetrics()
+        width = math.ceil(max(reading_width, category_width))
+        height = math.ceil(
+            ascent
+            + descent
+            + self.line_gap * scale
+            + category_ascent
+            + category_descent
+        )
+
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+
+        # Both lines are centered on each other; the reading is usually the
+        # wider of the two, but "Sensitive Groups" outruns a two-digit AQI.
+        reading_x = (width - reading_width) / 2
+        draw.text(
+            (reading_x, ascent),
+            value_text,
+            font=font,
+            fill=self.text_color,
+            anchor="ls",
+        )
+        if self.label:
+            # Sharing a baseline rather than a center line: the small label is
+            # meant to read as a unit with the number, not float beside it.
+            draw.text(
+                (reading_x + value_width + gap, ascent),
+                self.label,
+                font=label_font,
+                fill=self.text_color,
+                anchor="ls",
+            )
+        if category_text:
+            _draw_tracked_text(
+                draw,
+                ((width - category_width) / 2, height - category_descent),
+                category_text,
+                category_font,
+                self.text_color,
+                tracking,
+            )
+
+        return canvas.crop(canvas.getbbox())
+
+    def _render_widget(self, value_text, color, category_text=None):
         """Draw the widget on a transparent canvas sized to its contents.
 
         Rendered at 4x and downscaled so the dot and rounded corners come out
@@ -489,23 +680,9 @@ class AirQuality(Overlay):
         radius = self.dot_radius * scale
         gap = self.gap * scale
 
-        font = ImageFont.truetype(resolve_path(self.font_path), self.font_size * scale)
-        label_font = (
-            ImageFont.truetype(
-                resolve_path(self.font_path), self.label_font_size * scale
-            )
-            if self.label
-            else None
-        )
-
-        measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-        value_width = measure.textlength(value_text, font=font)
-        label_width = (
-            measure.textlength(self.label, font=label_font) + gap if self.label else 0
-        )
-
-        content_height = max(2 * radius, self.font_size * scale)
-        width = int(pad_x * 2 + 2 * radius + gap + value_width + label_width)
+        block = self._render_text_block(value_text, category_text, scale)
+        content_height = max(2 * radius, block.height)
+        width = int(pad_x * 2 + 2 * radius + gap + block.width)
         height = int(content_height + pad_y * 2)
 
         widget = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -530,24 +707,14 @@ class AirQuality(Overlay):
             width=max(1, scale // 2),
         )
 
-        # Nudged up a hair: "lm" centers on the font's full line box, which sits
-        # low against the dot because of descender space the digits never use.
-        text_x = dot_center_x + radius + gap
-        draw.text(
-            (text_x, middle - scale),
-            value_text,
-            font=font,
-            fill=self.text_color,
-            anchor="lm",
+        widget.paste(
+            block,
+            (
+                int(dot_center_x + radius + gap),
+                int((height - block.height) / 2),
+            ),
+            block,
         )
-        if self.label:
-            draw.text(
-                (text_x + value_width + gap, middle - scale),
-                self.label,
-                font=label_font,
-                fill=self.text_color,
-                anchor="lm",
-            )
 
         return widget.resize((width // scale, height // scale), Image.LANCZOS)
 
@@ -558,15 +725,18 @@ class AirQuality(Overlay):
         webcam = Image.open(image)
         webcam_with_aq = webcam.copy()
 
-        pm25 = self.fetch_pm25()
+        pm25 = self.pm25()
         if pm25 is None:
             webcam_with_aq.save(self.overlayed, format="JPEG")
             self.overlayed.seek(0)
             return
 
         aqi = pm25_to_aqi(pm25)
+        color, category = aqi_category(aqi)
         value_text = str(aqi) if self.metric == "aqi" else f"{pm25:.1f}"
-        widget = self._render_widget(value_text, aqi_color(aqi))
+        widget = self._render_widget(
+            value_text, color, category.upper() if self.show_category else None
+        )
         self.size = widget.size
 
         if self.place_auto:

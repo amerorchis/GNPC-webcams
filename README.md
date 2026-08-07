@@ -45,16 +45,26 @@ A placement list may not mix bare overlays with nested groups — if any placeme
 
 ### Air Quality Overlay
 
-The `mg` camera's GNPC feed carries an air quality badge: a severity dot colored by US EPA AQI category next to the AQI for the [Many Glacier Ranger Station](https://map.purpleair.com/) PurpleAir sensor's 10-minute average PM2.5. The NPS feed of the same camera deliberately does not get it.
+The `mg` camera's GNPC feed carries an air quality badge: a severity dot colored by US EPA AQI category, the AQI for the [Many Glacier Ranger Station](https://map.purpleair.com/) PurpleAir sensor's 10-minute average PM2.5, and the category wording underneath. The NPS feed of the same camera deliberately does not get it.
 
 ```yaml
 - type: air_quality
   sensor_index: 111457   # PurpleAir "Many Glacier Ranger Station"
 ```
 
-Useful options: `metric: pm25` (with `label: PM2.5`) shows the raw concentration instead of the AQI, `place: [x, y]` overrides the auto top-right corner, and `cache_seconds` / `max_reading_age` control how often the API is queried and how stale a sensor may be before the badge is dropped. Every failure mode — missing `PURPLE_KEY`, a failed request, a sensor that has gone quiet — publishes the image without the badge rather than a wrong number.
+#### EPA correction
 
-Readings are cached in the system temp directory (`gnpc-purpleair-<sensor_index>.json`) so the once-a-minute cron cadence doesn't re-query the API for data that only changes every couple of minutes. The cache is disposable; deleting it just forces a fresh fetch.
+By default the reading is not published raw. PurpleAir's low-cost sensors disagree with reference monitors in a well-characterized way, so the overlay applies the EPA's extended US-wide correction (Barkjohn et al. 2021, extended in 2022 for wildfire concentrations) — the same correction AirNow applies to PurpleAir data on its Fire and Smoke Map. Set `conversion: none` to publish the sensor's own number instead.
+
+The correction is defined against the sensor's CF=1 channel, but the API only publishes 10-minute averages of the ATM channel. The two channels track each other by a concentration-dependent ratio (identical in clean air, roughly 3:2 in smoke), so the overlay scales the 10-minute average by the sensor's current CF=1-to-ATM ratio before correcting. The ratio is clamped to 1.0–1.6 so one noisy instantaneous sample can't distort the published number.
+
+The correction moves in both directions: it lowers the number in clean air and raises it in smoke. It is not cosmetic — during the August 2026 smoke it was the difference between AQI 226 and 263.
+
+#### Other options
+
+`metric: pm25` (with `label: PM2.5`) shows the concentration instead of the AQI, `show_category: false` drops the wording and shrinks the badge to one line, `place: [x, y]` overrides the auto top-right corner, and `cache_seconds` / `max_reading_age` control how often the API is queried and how stale a sensor may be before the badge is dropped. Every failure mode — missing `PURPLE_KEY`, a failed request, a sensor that has gone quiet — publishes the image without the badge rather than a wrong number.
+
+Readings are cached for 10 minutes in the system temp directory (`gnpc-purpleair-<sensor_index>.json`), matching the averaging window, so the once-a-minute cron cadence doesn't re-query the API for data that hasn't changed. The cache is disposable; deleting it just forces a fresh fetch.
 
 ## Environment Setup
 
