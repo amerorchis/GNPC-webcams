@@ -210,6 +210,14 @@ def test_cf1_ratio_clamped_to_a_plausible_range():
     assert _cf1_ratio(0.0, 150.0) == 1.0
 
 
+def test_cf1_ratio_ignores_single_digit_readings():
+    # The free ATM value is rounded to a whole number, so dividing by it at
+    # single digits would amplify rounding into the published number
+    assert _cf1_ratio(4, 6) == 1.0
+    assert _cf1_ratio(9, 14) == 1.0
+    assert _cf1_ratio(10, 15) == pytest.approx(1.5)
+
+
 @needs_fonts
 def test_air_quality_overlay_auto_positions_top_right(monkeypatch):
     air_quality = AirQuality(sensor_index=1)
@@ -291,14 +299,16 @@ class FakeResponse:
         return self._payload
 
 
-def sensor_payload(pm25=20.0, last_seen=None, humidity=50, atm=None, cf1=None):
+def sensor_payload(pm25=20.0, last_seen=None, humidity=50, atm=20, cf1=None):
+    """A response shaped like the one the three billed fields actually return."""
     sensor = {
-        "last_seen": last_seen if last_seen is not None else int(time.time()),
         "humidity": humidity,
-        "stats": {"pm2.5_10minute": pm25},
+        "stats": {
+            "pm2.5": atm,
+            "pm2.5_10minute": pm25,
+            "time_stamp": last_seen if last_seen is not None else int(time.time()),
+        },
     }
-    if atm is not None:
-        sensor["pm2.5_atm"] = atm
     if cf1 is not None:
         sensor["pm2.5_cf_1"] = cf1
     return {"sensor": sensor}
@@ -326,8 +336,31 @@ def test_fetch_reading_reads_the_ten_minute_average(monkeypatch, purple_air):
     assert reading["humidity"] == 61
     assert calls[0][0].endswith("/sensors/1")
     assert calls[0][1]["headers"]["X-API-Key"] == "test-key"
-    for field in ("pm2.5_10minute", "pm2.5_atm", "pm2.5_cf_1", "humidity"):
-        assert field in calls[0][1]["params"]["fields"]
+
+
+def test_only_the_three_unavoidable_fields_are_billed(monkeypatch, purple_air):
+    """Each extra field costs points, and pm2.5_atm/last_seen come free."""
+    calls = []
+    monkeypatch.setattr(
+        Overlays.requests,
+        "get",
+        lambda url, **kw: calls.append(kw) or FakeResponse(sensor_payload()),
+    )
+
+    purple_air.fetch_reading()
+    requested = calls[0]["params"]["fields"].split(",")
+    assert sorted(requested) == ["humidity", "pm2.5_10minute", "pm2.5_cf_1"]
+
+
+def test_staleness_comes_from_the_free_stats_timestamp(monkeypatch, purple_air):
+    stale = int(time.time()) - 2 * 3600
+    payload = sensor_payload(last_seen=stale)
+    assert "last_seen" not in payload["sensor"]  # Not requested, so not present
+    monkeypatch.setattr(
+        Overlays.requests, "get", lambda url, **kw: FakeResponse(payload)
+    )
+
+    assert purple_air.fetch_reading() is None
 
 
 def test_fetch_reading_caches_between_calls(monkeypatch, purple_air):

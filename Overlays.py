@@ -370,6 +370,12 @@ def epa_correct_pm25(pa_cf1, humidity):
     return 2.966 + 0.69 * pa + 8.84e-4 * pa**2
 
 
+# Below this the two PM2.5 channels report the same number, so there is no
+# ratio to measure — and the ATM value available for free is rounded to a whole
+# number, which at single digits is too coarse to divide by.
+CF1_RATIO_FLOOR = 10.0
+
+
 def _cf1_ratio(pm25_atm, pm25_cf1):
     """How much higher the CF=1 channel reads than the ATM channel right now.
 
@@ -377,7 +383,7 @@ def _cf1_ratio(pm25_atm, pm25_cf1):
     Clamped because a single noisy pair of instantaneous samples must not be
     able to scale the 10-minute average into nonsense.
     """
-    if not pm25_atm or not pm25_cf1 or pm25_atm <= 0:
+    if not pm25_atm or not pm25_cf1 or pm25_atm < CF1_RATIO_FLOOR:
         return 1.0
     return min(max(pm25_cf1 / pm25_atm, 1.0), 1.6)
 
@@ -527,11 +533,12 @@ class AirQuality(Overlay):
                 response = requests.get(
                     PURPLE_AIR_SENSOR_URL.format(sensor_index=self.sensor_index),
                     headers={"X-API-Key": api_key},
-                    params={
-                        "fields": (
-                            "pm2.5_10minute,pm2.5_atm,pm2.5_cf_1,humidity,last_seen"
-                        )
-                    },
+                    # Billed per field, so ask for the three that can't be
+                    # derived: the "stats" block arrives with the 10-minute
+                    # average and carries the current ATM reading and its
+                    # timestamp for free, making pm2.5_atm and last_seen
+                    # redundant purchases.
+                    params={"fields": "pm2.5_10minute,pm2.5_cf_1,humidity"},
                     timeout=self.timeout,
                 )
                 response.raise_for_status()
@@ -542,7 +549,8 @@ class AirQuality(Overlay):
 
             # The 10-minute average lives under "stats"; older API versions
             # promoted it to the sensor itself.
-            pm25 = sensor.get("stats", {}).get("pm2.5_10minute")
+            stats = sensor.get("stats", {})
+            pm25 = stats.get("pm2.5_10minute")
             if pm25 is None:
                 pm25 = sensor.get("pm2.5_10minute")
             if pm25 is None:
@@ -551,7 +559,9 @@ class AirQuality(Overlay):
                 )
                 return None
 
-            last_seen = sensor.get("last_seen")
+            # stats.time_stamp is when the sensor last reported, matching the
+            # last_seen field exactly but without being billed for it.
+            last_seen = stats.get("time_stamp") or sensor.get("last_seen")
             if (
                 self.max_reading_age
                 and last_seen
@@ -567,9 +577,10 @@ class AirQuality(Overlay):
             reading = {
                 "pm25": pm25,
                 "humidity": sensor.get("humidity"),
-                "cf1_ratio": _cf1_ratio(
-                    sensor.get("pm2.5_atm"), sensor.get("pm2.5_cf_1")
-                ),
+                # stats.pm2.5 is the current ATM reading rounded to a whole
+                # number — free with the 10-minute average, and precise enough
+                # for a ratio that gets clamped anyway.
+                "cf1_ratio": _cf1_ratio(stats.get("pm2.5"), sensor.get("pm2.5_cf_1")),
             }
             self._write_cache(reading)
             return reading

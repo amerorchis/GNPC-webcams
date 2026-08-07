@@ -66,6 +66,20 @@ The correction moves in both directions: it lowers the number in clean air and r
 
 Readings are cached for 10 minutes in the system temp directory (`gnpc-purpleair-<sensor_index>.json`), matching the averaging window, so the once-a-minute cron cadence doesn't re-query the API for data that hasn't changed. The cache is disposable; deleting it just forces a fresh fetch.
 
+#### API point cost
+
+PurpleAir bills per call as `base_cost + (cost_of_all_fields × rows)`. A single-sensor query is one row with a base of 1 point, and the fields this overlay needs cost 2 points each, so a call costs **7 points**:
+
+| field | why it can't be dropped |
+|---|---|
+| `pm2.5_10minute` | the reading itself |
+| `pm2.5_cf_1` | numerator of the ATM→CF=1 ratio |
+| `humidity` | input to the EPA correction |
+
+Three other values arrive **free** inside the `stats` block that comes with `pm2.5_10minute`, so they must not be requested as fields: `stats.pm2.5` (the current ATM reading, rounded — the ratio's denominator, making `pm2.5_atm` redundant), and `stats.time_stamp` (identical to `last_seen`, used for the staleness check). Adding either back costs 2 points a call for nothing.
+
+At the 10-minute cache cadence that's ~1,000 points/day, or roughly $0.30/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
+
 ## Environment Setup
 
 1. Copy `template.env` to `environment.env` and configure:
