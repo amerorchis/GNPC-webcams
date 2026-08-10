@@ -65,27 +65,45 @@ Each publishes a single image. NPS hosts the originals, so an `_nps` variant of 
 
 A placement list may not mix bare overlays with nested groups — if any placement is a group, wrap them all, as `mg` and `smv` do.
 
+### Why the NPS feeds put the logo at x=185
+
+The `subname: nps` variants exist because nps.gov displays our frames cropped. Its webcam index uses `object-fit: cover` in a box of roughly 1.43:1, so a 16:9 frame loses the difference off both sides: 189 px per side at the widest layout, growing to about 205 px on a narrow phone. The logo starts at 185 so its shading still runs to the visible edge at every width — shading hidden under the crop costs nothing, whereas a gap between the crop edge and the logo is immediately obvious.
+
+The click-through page (`/media/webcam/view.htm`) uses `object-fit: fill` and shows the whole frame, so the same logo reads as inset there. No single x is flush in both; the index wins because that is the page people browse.
+
+NPS has changed this crop more than once, so re-measure rather than assume. In the browser console on their webcams page:
+
+```js
+document.querySelectorAll('img.WebcamPreview__CoverImage').forEach(i => {
+  const r = i.getBoundingClientRect();
+  const s = Math.max(r.width / i.naturalWidth, r.height / i.naturalHeight);
+  console.log(i.src.split('/').pop(),
+              'crop per side:', Math.round((i.naturalWidth * s - r.width) / s / 2), 'px');
+});
+```
+
+`dark_sky_nps` is exempt: that frame is 1021×687, close enough to the box aspect that it loses only 25 px per side, and its NPS variant is offset vertically (`604` against the GNPC feed's `619`) rather than horizontally.
+
 ### Conditions Badge (Air Quality + Temperature)
 
-Four feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
+Three feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
 
 | feed | sensor | note |
 |---|---|---|
 | `mg` | 111457 "Many Glacier Ranger Station" | GNPC feed only; the NPS feed of the same camera deliberately has no badge |
 | `tm` | 192041 "Two Medicine" | 0.1 mi from the camera |
 | `stmary` | 83937 "St. Mary - Visitor Center" | AQI only — see below |
-| `dark_sky` | 83937 "St. Mary - Visitor Center" | same sensor, right by the observatory; GNPC feed only |
 
 ```yaml
 - type: air_quality
   sensor_index: 111457
 ```
 
-The St. Mary sensor reports PM2.5 but no temperature and no humidity — that module is dead or absent — so its two badges collapse to the AQI-only pill and the EPA correction falls back to its RH 50 default. Both carry `show_temperature: false`, which stops paying 2 points a call for a field that always comes back null. That is the one setting to remove if the module is ever repaired; until then the badge would look identical either way, so nothing but the bill changes.
+The `dark_sky` allsky feed deliberately has no badge. A fisheye of the sky is the one view where a conditions readout adds nothing anybody came for.
 
-The two St. Mary feeds share one cache entry, keyed by sensor index, so the second camera to run in a cycle reuses the first one's reading instead of paying for its own call.
+The St. Mary sensor reports PM2.5 but no temperature and no humidity — that module is dead or absent — so its badge collapses to the AQI-only pill and the EPA correction falls back to its RH 50 default. It carries `show_temperature: false`, which stops paying 2 points a call for a field that always comes back null. That is the one setting to remove if the module is ever repaired; until then the badge would look identical either way, so nothing but the bill changes.
 
-It sits bottom-right on purpose. On `mg` the lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. The same corner works on `tm` and `stmary` — treetops and foreground grass — while their top-right is where the mountains sit. On the `dark_sky` allsky frame it lands in the black corner outside the fisheye circle, covering no sky at all; that frame is smaller (1021×687) than the 1920×1080 cameras, so the badge reads proportionally larger there, matching the logo, which is scaled up to suit that frame too. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
+It sits bottom-right on purpose. On `mg` the lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. The same corner works on `tm` and `stmary` — treetops and foreground grass — while their top-right is where the mountains sit. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
 
 #### Layout collapse
 
@@ -135,7 +153,7 @@ Querying the sensors one at a time is the cheap way round, despite appearances. 
 
 Three other values arrive **free** inside the `stats` block that comes with `pm2.5_10minute`, so they must not be requested as fields: `stats.pm2.5` (the current ATM reading, rounded — the ratio's denominator, making `pm2.5_atm` redundant), and `stats.time_stamp` (identical to `last_seen`, used for the staleness check). Adding either back costs 2 points a call for nothing.
 
-Each sensor is queried and cached separately, so cost scales with sensors, not feeds: at the 10-minute cache cadence the three sensors behind the four badges cost 22 points a cycle — 8 each for Many Glacier and Two Medicine, 6 for St. Mary — or ~3,170 points/day, roughly $0.95/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
+Each sensor is queried and cached separately, so cost scales with sensors, not feeds: at the 10-minute cache cadence the three badges cost 22 points a cycle — 8 each for Many Glacier and Two Medicine, 6 for St. Mary — or ~3,170 points/day, roughly $0.95/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
 
 ## Environment Setup
 

@@ -1,34 +1,34 @@
 # GNPC Webcam Configuration
 # This file defines all webcam and overlay configurations
+#
+# The x=185 on every `subname: nps` logo exists because nps.gov's webcam index
+# displays our frames with object-fit: cover in a ~1.43:1 box, cropping the sides
+# off a 16:9 frame. That crop is 189px per side at the widest layout and grows to
+# ~205px on narrow screens, so the logo starts at 185 to keep its shading running
+# to the visible edge at every width — shading hidden under the crop costs nothing,
+# a gap between the crop edge and the logo is what shows. Re-measure if NPS
+# restyles: the crop is (naturalWidth * scale - boxWidth) / scale / 2.
 
 webcams:
 
   - name: dark_sky
     file_name_on_server: stmaryallsky-resize.jpg
     logo_placements:
-      # NPS feed: logo and timestamp only, no conditions badge.
-      - - type: logo
-          place: [0, 604]
-          size: [299, 68]
-          subname: nps
-          cover_date: true
-      # GNPC feed: adds the St. Mary conditions badge, in the corner outside
-      # the fisheye circle where it covers no sky.
-      - - type: logo
-          place: [0, 619]
-          size: [299, 68]
-          cover_date: true
-        - type: air_quality
-          sensor_index: 83937  # PurpleAir "St. Mary - Visitor Center"
-          # See the stmary entry: that sensor reports no temperature, so the
-          # field is not bought here either.
-          show_temperature: false
+      - type: logo
+        place: [0, 604]
+        size: [299, 68]
+        subname: nps
+        cover_date: true
+      - type: logo
+        place: [0, 619]
+        size: [299, 68]
+        cover_date: true
 
   - name: lpp
     file_name_on_server: lpp.jpg
     logo_placements:
       - type: logo
-        place: [140, 944]
+        place: [185, 944]
         size: [612, 137]
         img: overlays/logo-shaded.png
         subname: nps
@@ -46,7 +46,7 @@ webcams:
       # into a single output image (see webcams-temperature.yaml for an
       # example with a temperature overlay)
       - - type: logo
-          place: [140, 944]
+          place: [185, 944]
           size: [612, 137]
           img: overlays/logo-shaded.png
           subname: nps
@@ -61,7 +61,7 @@ webcams:
     file_name_on_server: hlt.jpg
     logo_placements:
       - type: logo
-        place: [140, 944]
+        place: [185, 944]
         size: [612, 137]
         img: overlays/logo-shaded.png
         subname: nps
@@ -75,7 +75,7 @@ webcams:
     logo_placements:
       # NPS feed: logo only, no air quality widget.
       - - type: logo
-          place: [140, 944]
+          place: [185, 944]
           size: [612, 137]
           img: overlays/logo-shaded.png
           subname: nps

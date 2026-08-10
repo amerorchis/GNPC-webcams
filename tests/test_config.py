@@ -165,23 +165,14 @@ def test_unknown_overlay_type_is_rejected():
         parse_overlay({"type": "sparkles", "place": [0, 0], "size": [1, 1]})
 
 
-# Cameras that publish both an NPS and a GNPC feed, with the sensor whose
-# reading belongs on the GNPC one
-TWO_FEED_BADGE_CAMERAS = [
-    ("mg", 111457),  # PurpleAir "Many Glacier Ranger Station"
-    ("dark_sky", 83937),  # PurpleAir "St. Mary - Visitor Center"
-]
-
-
-@pytest.mark.parametrize("name", ["dark_sky", "stmary"])
-def test_st_mary_badges_do_not_buy_the_dead_temperature_field(name):
+def test_st_mary_badge_does_not_buy_the_dead_temperature_field():
     """Sensor 83937 reports no temperature, so the field is not paid for."""
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
     badges = [
         o
-        for group in by_name[name].logo_placements
+        for group in by_name["stmary"].logo_placements
         for o in group
         if isinstance(o, AirQualityConfig)
     ]
@@ -193,12 +184,11 @@ def test_st_mary_badges_do_not_buy_the_dead_temperature_field(name):
     assert "temperature" not in overlay._billed_fields()
 
 
-@pytest.mark.parametrize("name, sensor_index", TWO_FEED_BADGE_CAMERAS)
-def test_air_quality_only_on_the_non_nps_feed(name, sensor_index):
+def test_air_quality_only_on_the_non_nps_feed():
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
-    groups = by_name[name].logo_placements
+    groups = by_name["mg"].logo_placements
     nps_group = [g for g in groups if any(o.subname == "nps" for o in g)]
     gnpc_group = [g for g in groups if not any(o.subname == "nps" for o in g)]
     assert len(nps_group) == 1 and len(gnpc_group) == 1
@@ -206,18 +196,57 @@ def test_air_quality_only_on_the_non_nps_feed(name, sensor_index):
     assert not any(isinstance(o, AirQualityConfig) for o in nps_group[0])
     air_quality = [o for o in gnpc_group[0] if isinstance(o, AirQualityConfig)]
     assert len(air_quality) == 1
-    assert air_quality[0].sensor_index == sensor_index
+    # PurpleAir "Many Glacier Ranger Station"
+    assert air_quality[0].sensor_index == 111457
 
 
-@pytest.mark.parametrize("name, sensor_index", TWO_FEED_BADGE_CAMERAS)
-def test_a_composite_is_built_for_the_gnpc_feed_only(name, sensor_index):
+def test_a_composite_is_built_for_the_gnpc_feed_only():
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
-    webcam = create_webcam_from_config(by_name[name])
-    by_file = {o.get_overlayed_img(name)[1]: o for o in webcam.overlays}
+    webcam = create_webcam_from_config(by_name["mg"])
+    by_file = {o.get_overlayed_img("mg")[1]: o for o in webcam.overlays}
 
-    assert isinstance(by_file[f"{name}_nps.jpg"], Logo)
-    composite = by_file[f"{name}.jpg"]
+    assert isinstance(by_file["mg_nps.jpg"], Logo)
+    composite = by_file["mg.jpg"]
     assert isinstance(composite, CompositeOverlay)
     assert [type(o) for o in composite.overlays] == [Logo, AirQuality]
+
+
+def test_the_allsky_feed_carries_no_badge():
+    """The DSO cam publishes logo and timestamp only, on both feeds."""
+    config = load_config("webcams.yaml")
+    by_name = {w.name: w for w in config.webcams}
+
+    placements = by_name["dark_sky"].logo_placements
+    assert all(isinstance(p, LogoConfig) for p in placements)
+
+    webcam = create_webcam_from_config(by_name["dark_sky"])
+    assert all(isinstance(o, Logo) for o in webcam.overlays)
+    assert {o.get_overlayed_img("dark_sky")[1] for o in webcam.overlays} == {
+        "dark_sky_nps.jpg",
+        "dark_sky.jpg",
+    }
+
+
+def test_nps_logos_stay_inside_the_nps_index_crop():
+    """nps.gov crops at least 189px off each side of the 16:9 feeds.
+
+    The logo has to start at or before that so its shading reaches the visible
+    edge; a larger x leaves a gap on wide layouts.
+    """
+    config = load_config("webcams.yaml")
+
+    wide_nps_logos = [
+        o
+        for w in config.webcams
+        for p in w.logo_placements
+        for o in (p if isinstance(p, list) else [p])
+        # dark_sky's NPS feed is offset vertically instead, and barely cropped
+        if isinstance(o, LogoConfig)
+        and o.subname == "nps"
+        and tuple(o.size) != (299, 68)
+    ]
+    assert wide_nps_logos
+    for logo in wide_nps_logos:
+        assert logo.place[0] <= 189, f"logo at x={logo.place[0]} leaves a gap"
