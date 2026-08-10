@@ -43,14 +43,33 @@ Each entry in `logo_placements` produces one published image; `subname` is appen
 
 A placement list may not mix bare overlays with nested groups — if any placement is a group, wrap them all, as `mg` and `smv` do.
 
-### Air Quality Overlay
+### Conditions Badge (Air Quality + Temperature)
 
-The `mg` camera's GNPC feed carries an air quality badge: a severity dot colored by US EPA AQI category, the AQI for the [Many Glacier Ranger Station](https://map.purpleair.com/) PurpleAir sensor's 10-minute average PM2.5, and the category wording underneath. The NPS feed of the same camera deliberately does not get it.
+The `mg` camera's GNPC feed carries a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI for the [Many Glacier Ranger Station](https://map.purpleair.com/) PurpleAir sensor, and the category wording. The NPS feed of the same camera deliberately does not get it.
 
 ```yaml
 - type: air_quality
   sensor_index: 111457   # PurpleAir "Many Glacier Ranger Station"
 ```
+
+It sits bottom-right on purpose. The lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
+
+#### Layout collapse
+
+Temperature and AQI come from measurements that can fail independently, so the badge picks its shape from what actually arrived:
+
+| available | shape |
+|---|---|
+| both | square tile, temperature over AQI |
+| AQI only | horizontal pill, dot + AQI + category |
+| temperature only | horizontal pill, temperature alone (no dot — the dot means AQI severity) |
+| neither | no badge; the frame publishes untouched |
+
+#### Temperature
+
+The temperature comes from the PurpleAir sensor, which is the only instrument physically at Many Glacier. Its thermometer sits inside the enclosure where the electronics and sunlight both warm it, so the reading runs hot; `temperature_offset` (default `-8.0` °F) is PurpleAir's own published correction, which keeps the badge agreeing with what purpleair.com shows for the sensor. Note that [published evaluations](https://www.mdpi.com/2073-4433/15/4/415) find this correction tends to overcorrect, with real bias averaging nearer 2.6 °C — so treat the number as approximate and adjust `temperature_offset` if it drifts from reality.
+
+Setting `temperature_source: endpoint` reads `temperature_endpoint` (a plaintext HTTP endpoint) instead, and `show_temperature: false` drops temperature entirely, which also stops paying for the field.
 
 #### EPA correction
 
@@ -68,17 +87,18 @@ Readings are cached for 10 minutes in the system temp directory (`gnpc-purpleair
 
 #### API point cost
 
-PurpleAir bills per call as `base_cost + (cost_of_all_fields × rows)`. A single-sensor query is one row with a base of 1 point, and the fields this overlay needs cost 2 points each, so a call costs **7 points**:
+PurpleAir bills per call as `base_cost + (cost_of_all_fields × rows)`. A single-sensor query is one row with a base of 1 point, and the fields this overlay needs cost 2 points each, so a call costs **9 points**:
 
 | field | why it can't be dropped |
 |---|---|
 | `pm2.5_10minute` | the reading itself |
 | `pm2.5_cf_1` | numerator of the ATM→CF=1 ratio |
 | `humidity` | input to the EPA correction |
+| `temperature` | the badge's temperature (drop with `show_temperature: false`) |
 
 Three other values arrive **free** inside the `stats` block that comes with `pm2.5_10minute`, so they must not be requested as fields: `stats.pm2.5` (the current ATM reading, rounded — the ratio's denominator, making `pm2.5_atm` redundant), and `stats.time_stamp` (identical to `last_seen`, used for the staleness check). Adding either back costs 2 points a call for nothing.
 
-At the 10-minute cache cadence that's ~1,000 points/day, or roughly $0.30/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
+At the 10-minute cache cadence that's ~1,300 points/day, or roughly $0.39/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
 
 ## Environment Setup
 

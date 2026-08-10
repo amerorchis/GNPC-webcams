@@ -20,6 +20,10 @@ from paths import resolve_path
 
 logger = logging.getLogger(__name__)
 
+# glacier.org rejects both a spoofed browser User-Agent and the requests
+# default with a 403, so identify the script honestly.
+USER_AGENT = "GNPC-webcams/1.0 (+https://glacier.org/webcam)"
+
 
 class Overlay(ABC):
     """Abstract base class for image overlays."""
@@ -172,13 +176,10 @@ class Temperature(Overlay):
     def fetch_temperature(self):
         """Fetch temperature from the endpoint."""
         try:
-            # Headers to mimic a browser request
             headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
+                # The endpoint 403s a spoofed browser User-Agent (and the
+                # requests default), so identify the script for what it is.
+                "User-Agent": USER_AGENT,
                 "Accept": (
                     "text/html,application/xhtml+xml,application/xml;q=0.9,"
                     "image/avif,image/webp,image/apng,*/*;q=0.8"
@@ -427,15 +428,22 @@ class AirQuality(Overlay):
         metric="aqi",
         conversion="epa",
         api_key_env="PURPLE_KEY",
-        margin=(24, 24),
+        anchor="bottom-right",
+        margin=(20, 20),
+        show_temperature=True,
+        temperature_source="purpleair",
+        temperature_offset=-8.0,
+        temperature_endpoint="https://glacier.org/scripts/post_temp.cgi",
+        temperature_label="°F",
         font_path="fonts/SourceSansVariable-Bold.ttf",
-        font_size=34,
+        font_size=44,
         label="AQI",
-        label_font_size=19,
+        label_font_size=21,
         show_category=True,
         category_font_size=16,
         category_tracking=1.4,
         line_gap=3,
+        divider_color=(255, 255, 255, 85),
         bg_color=(0, 0, 0, 140),
         text_color=(255, 255, 255),
         dot_radius=15,
@@ -453,7 +461,14 @@ class AirQuality(Overlay):
         self.metric = metric
         self.conversion = conversion
         self.api_key_env = api_key_env
+        self.anchor = anchor
         self.margin = tuple(margin)
+        self.show_temperature = show_temperature
+        self.temperature_source = temperature_source
+        self.temperature_offset = temperature_offset
+        self.temperature_endpoint = temperature_endpoint
+        self.temperature_label = temperature_label
+        self.divider_color = tuple(divider_color) if divider_color else None
         self.font_path = font_path
         self.font_size = font_size
         self.label = label
@@ -472,6 +487,13 @@ class AirQuality(Overlay):
         self.cache_seconds = cache_seconds
         self.max_reading_age = max_reading_age
         self.timeout = timeout
+
+    def _billed_fields(self):
+        """The PurpleAir fields worth paying for, given how this badge is set up."""
+        fields = ["pm2.5_10minute", "pm2.5_cf_1", "humidity"]
+        if self.show_temperature and self.temperature_source == "purpleair":
+            fields.append("temperature")
+        return fields
 
     @property
     def _cache_path(self):
@@ -534,12 +556,11 @@ class AirQuality(Overlay):
                 response = requests.get(
                     PURPLE_AIR_SENSOR_URL.format(sensor_index=self.sensor_index),
                     headers={"X-API-Key": api_key},
-                    # Billed per field, so ask for the three that can't be
-                    # derived: the "stats" block arrives with the 10-minute
-                    # average and carries the current ATM reading and its
-                    # timestamp for free, making pm2.5_atm and last_seen
-                    # redundant purchases.
-                    params={"fields": "pm2.5_10minute,pm2.5_cf_1,humidity"},
+                    # Billed per field, so ask only for what can't be derived:
+                    # the "stats" block arrives with the 10-minute average and
+                    # carries the current ATM reading and its timestamp for
+                    # free, making pm2.5_atm and last_seen redundant purchases.
+                    params={"fields": ",".join(self._billed_fields())},
                     timeout=self.timeout,
                 )
                 response.raise_for_status()
@@ -578,6 +599,7 @@ class AirQuality(Overlay):
             reading = {
                 "pm25": pm25,
                 "humidity": sensor.get("humidity"),
+                "temperature": sensor.get("temperature"),
                 # stats.pm2.5 is the current ATM reading rounded to a whole
                 # number — free with the 10-minute average, and precise enough
                 # for a ratio that gets clamped anyway.
@@ -606,23 +628,59 @@ class AirQuality(Overlay):
             )
         return pm25
 
-    def _render_reading(self, value_text, scale):
+    def temperature(self):
+        """Ambient temperature in °F, or None if it is unavailable.
+
+        The PurpleAir thermometer sits inside the sensor's enclosure, where the
+        electronics and sunlight both warm it, so its reading runs hot. The
+        offset applied here is PurpleAir's own published figure (-4.4 °C), which
+        keeps the badge agreeing with what purpleair.com shows for the sensor —
+        worth more than a private calibration nobody else can reproduce.
+        """
+        if not self.show_temperature:
+            return None
+
+        if self.temperature_source == "purpleair":
+            reading = self.fetch_reading()
+            if reading is None or reading.get("temperature") is None:
+                return None
+            return reading["temperature"] + self.temperature_offset
+
+        return self._fetch_endpoint_temperature()
+
+    def _fetch_endpoint_temperature(self):
+        """Temperature from a plaintext HTTP endpoint, or None."""
+        try:
+            response = requests.get(
+                self.temperature_endpoint,
+                headers={"User-Agent": USER_AGENT},
+                params={"rand": random.randint(1000, 9999)},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            return float(response.text.strip())
+        except (requests.RequestException, ValueError) as e:
+            logger.warning(f"Error fetching temperature: {e}")
+            return None
+
+    def _font(self, size, scale):
+        return ImageFont.truetype(resolve_path(self.font_path), int(size * scale))
+
+    def _render_reading(self, value_text, unit_text, scale):
         """The number and its unit label, cropped to their own ink.
 
         Cropping to the ink rather than to the font's line box is what lets the
         caller center this against the dot: font metrics reserve space for
         ascenders and descenders that digits never use.
         """
-        font = ImageFont.truetype(resolve_path(self.font_path), self.font_size * scale)
-        label_font = ImageFont.truetype(
-            resolve_path(self.font_path), self.label_font_size * scale
-        )
+        font = self._font(self.font_size, scale)
+        label_font = self._font(self.label_font_size, scale)
         gap = self.gap * scale
 
         measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
         value_width = measure.textlength(value_text, font=font)
         label_width = (
-            gap + measure.textlength(self.label, font=label_font) if self.label else 0
+            gap + measure.textlength(unit_text, font=label_font) if unit_text else 0
         )
 
         ascent, descent = font.getmetrics()
@@ -633,33 +691,33 @@ class AirQuality(Overlay):
         )
         draw = ImageDraw.Draw(canvas)
         draw.text((0, ascent), value_text, font=font, fill=self.text_color, anchor="ls")
-        if self.label:
+        if unit_text:
             # Sharing a baseline rather than a center line: the small label is
             # meant to read as a unit with the number, not float beside it.
             draw.text(
                 (value_width + gap, ascent),
-                self.label,
+                unit_text,
                 font=label_font,
                 fill=self.text_color,
                 anchor="ls",
             )
         return canvas.crop(canvas.getbbox())
 
-    def _render_content(self, value_text, color, category_text, scale):
+    def _render_content(self, value_text, color, category_text, scale, unit_text=None):
         """Lay out the dot and reading on one line, the category beneath.
 
         Keeping the dot inline with the number ties the color to the value it
         describes and lets the category wording use the badge's full width
         instead of being indented past the dot.
         """
-        category_font = ImageFont.truetype(
-            resolve_path(self.font_path), self.category_font_size * scale
-        )
-        radius = self.dot_radius * scale
+        category_font = self._font(self.category_font_size, scale)
+        radius = self.dot_radius * scale if color else 0
         gap = self.gap * scale
         tracking = self.category_tracking * scale
 
-        reading = self._render_reading(value_text, scale)
+        reading = self._render_reading(
+            value_text, self.label if unit_text is None else unit_text, scale
+        )
         top_width = 2 * radius + gap + reading.width
         top_height = max(2 * radius, reading.height)
 
@@ -688,12 +746,13 @@ class AirQuality(Overlay):
         # category like "Good", the category wider for "Sensitive Groups".
         top_x = (width - top_width) / 2
         middle = top_height / 2
-        draw.ellipse(
-            (top_x, middle - radius, top_x + 2 * radius, middle + radius),
-            fill=color,
-            outline=self.dot_outline_color,
-            width=max(1, scale // 2),
-        )
+        if color:
+            draw.ellipse(
+                (top_x, middle - radius, top_x + 2 * radius, middle + radius),
+                fill=color,
+                outline=self.dot_outline_color,
+                width=max(1, scale // 2),
+            )
         content.paste(
             reading,
             (int(top_x + 2 * radius + gap), int(middle - reading.height / 2)),
@@ -711,8 +770,133 @@ class AirQuality(Overlay):
 
         return content.crop(content.getbbox())
 
-    def _render_widget(self, value_text, color, category_text=None):
-        """Draw the widget on a transparent canvas sized to its contents.
+    def _render_square(self, value_text, color, category_text, temperature_text, scale):
+        """The two-measurement badge: temperature above, AQI below, on a square.
+
+        The temperature is centered on its own rather than sharing the AQI's
+        number column: it comes from a different instrument and means something
+        unrelated, so the hairline separates two peers instead of a heading from
+        its body.
+        """
+        num_font = self._font(self.font_size, scale)
+        unit_font = self._font(self.label_font_size, scale)
+        category_font = self._font(self.category_font_size, scale)
+        gap = int(self.gap * scale * 0.7)
+        radius = self.dot_radius * scale
+        tracking = self.category_tracking * scale
+
+        measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        temp_width = measure.textlength(temperature_text, font=num_font)
+        value_width = measure.textlength(value_text, font=num_font)
+        unit_width = max(
+            measure.textlength(self.temperature_label, font=unit_font),
+            measure.textlength(self.label, font=unit_font),
+        )
+        category_width = (
+            _tracked_text_width(measure, category_text, category_font, tracking)
+            if category_text
+            else 0
+        )
+
+        # The AQI row sets the layout: [dot][right-aligned number][unit]
+        number_right = 2 * radius + gap + max(temp_width, value_width)
+        row_width = number_right + gap + unit_width
+        content_width = int(max(row_width, category_width))
+
+        num_ascent, num_descent = num_font.getmetrics()
+        cat_ascent, cat_descent = category_font.getmetrics()
+        row_height = num_ascent + num_descent
+        category_height = cat_ascent + cat_descent if category_text else 0
+        side = int(
+            max(
+                content_width + 2 * self.padding[0] * scale,
+                2 * row_height + category_height + 4 * self.padding[1] * scale,
+            )
+        )
+
+        tile = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(tile)
+        draw.rounded_rectangle(
+            (0, 0, side - 1, side - 1),
+            radius=int(self.corner_radius * scale * 1.7),
+            fill=self.bg_color,
+        )
+
+        # Spread the rows down the square instead of clumping them in the middle
+        step = (side - (2 * row_height + category_height)) / 4
+        left = (side - content_width) / 2 + (content_width - row_width) / 2
+
+        y = step
+        group_width = (
+            temp_width
+            + gap
+            + measure.textlength(self.temperature_label, font=unit_font)
+        )
+        temp_x = (side - group_width) / 2
+        draw.text(
+            (temp_x, y + num_ascent),
+            temperature_text,
+            font=num_font,
+            fill=self.text_color,
+            anchor="ls",
+        )
+        draw.text(
+            (temp_x + temp_width + gap, y + num_ascent),
+            self.temperature_label,
+            font=unit_font,
+            fill=self.text_color,
+            anchor="ls",
+        )
+        y += row_height + step
+
+        if self.divider_color:
+            rule_width = content_width * 0.92
+            rule_x = (side - rule_width) / 2
+            rule_y = y - step / 2
+            draw.rectangle(
+                (rule_x, rule_y, rule_x + rule_width, rule_y + max(2, scale // 2)),
+                fill=self.divider_color,
+            )
+
+        dot_middle = y + num_ascent - num_ascent * 0.33
+        draw.ellipse(
+            (left, dot_middle - radius, left + 2 * radius, dot_middle + radius),
+            fill=color,
+            outline=self.dot_outline_color,
+            width=max(1, scale // 2),
+        )
+        draw.text(
+            (left + number_right, y + num_ascent),
+            value_text,
+            font=num_font,
+            fill=self.text_color,
+            anchor="rs",
+        )
+        draw.text(
+            (left + number_right + gap, y + num_ascent),
+            self.label,
+            font=unit_font,
+            fill=self.text_color,
+            anchor="ls",
+        )
+        y += row_height + step
+
+        if category_text:
+            _draw_tracked_text(
+                draw,
+                ((side - category_width) / 2, y + cat_ascent),
+                category_text,
+                category_font,
+                self.text_color,
+                tracking,
+            )
+
+        return tile.resize((side // scale, side // scale), Image.LANCZOS)
+
+    def _render_widget(
+        self, value_text, color, category_text=None, temperature_text=None
+    ):
+        """Draw the badge on a transparent canvas sized to its contents.
 
         Rendered at 4x and downscaled so the dot and rounded corners come out
         smooth — PIL's drawing primitives are not anti-aliased.
@@ -720,7 +904,19 @@ class AirQuality(Overlay):
         scale = 4
         pad_x, pad_y = (self.padding[0] * scale, self.padding[1] * scale)
 
-        content = self._render_content(value_text, color, category_text, scale)
+        if value_text is not None and temperature_text is not None:
+            return self._render_square(
+                value_text, color, category_text, temperature_text, scale
+            )
+
+        # Only one measurement survived, so collapse to the single-value pill
+        # rather than publishing a square with an empty half.
+        if value_text is not None:
+            content = self._render_content(value_text, color, category_text, scale)
+        else:
+            content = self._render_content(
+                temperature_text, None, None, scale, unit_text=self.temperature_label
+            )
         width = content.width + 2 * pad_x
         height = content.height + 2 * pad_y
 
@@ -734,33 +930,53 @@ class AirQuality(Overlay):
 
         return widget.resize((width // scale, height // scale), Image.LANCZOS)
 
+    def _anchored_place(self, image_size, widget_size):
+        """Where to paste the badge, given the configured corner."""
+        vertical, _, horizontal = self.anchor.partition("-")
+        x = (
+            self.margin[0]
+            if horizontal == "left"
+            else image_size[0] - widget_size[0] - self.margin[0]
+        )
+        y = (
+            self.margin[1]
+            if vertical == "top"
+            else image_size[1] - widget_size[1] - self.margin[1]
+        )
+        return (x, y)
+
     def add_overlay(self, image, mod_time_str=""):
-        """Add the air quality widget to the image."""
+        """Add the air quality badge to the image."""
         self.overlayed = io.BytesIO()
 
         webcam = Image.open(image)
         webcam_with_aq = webcam.copy()
 
         pm25 = self.pm25()
-        if pm25 is None:
+        temperature = self.temperature()
+
+        value_text = None
+        color = None
+        category = None
+        if pm25 is not None:
+            aqi = pm25_to_aqi(pm25)
+            color, category_name = aqi_category(aqi)
+            category = category_name.upper() if self.show_category else None
+            value_text = str(aqi) if self.metric == "aqi" else f"{pm25:.1f}"
+
+        temperature_text = None if temperature is None else f"{round(temperature)}"
+
+        if value_text is None and temperature_text is None:
+            # Nothing trustworthy to show; publish the frame untouched.
             webcam_with_aq.save(self.overlayed, format="JPEG")
             self.overlayed.seek(0)
             return
 
-        aqi = pm25_to_aqi(pm25)
-        color, category = aqi_category(aqi)
-        value_text = str(aqi) if self.metric == "aqi" else f"{pm25:.1f}"
-        widget = self._render_widget(
-            value_text, color, category.upper() if self.show_category else None
-        )
+        widget = self._render_widget(value_text, color, category, temperature_text)
         self.size = widget.size
 
         if self.place_auto:
-            # Top-right corner, inset by the margin.
-            self.place = (
-                webcam.size[0] - widget.size[0] - self.margin[0],
-                self.margin[1],
-            )
+            self.place = self._anchored_place(webcam.size, widget.size)
 
         webcam_with_aq.paste(widget, self.place, widget)
         webcam_with_aq.save(self.overlayed, format="JPEG")

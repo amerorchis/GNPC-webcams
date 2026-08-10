@@ -56,25 +56,40 @@ class TemperatureConfig:
 class AirQualityConfig:
     """Configuration for an AirQuality overlay."""
 
+    # Every default here must match AirQuality.__init__ — the factory splats
+    # this dataclass, so a stale value here silently overrides the class.
+    # test_air_quality_config_defaults_match_the_overlay guards the pairing.
     sensor_index: int
     place: Optional[Tuple[int, int]] = None
     size: Optional[Tuple[int, int]] = None
     subname: Optional[str] = None
     metric: str = "aqi"
+    conversion: str = "epa"
     api_key_env: str = "PURPLE_KEY"
-    margin: Tuple[int, int] = (24, 24)
+    anchor: str = "bottom-right"
+    margin: Tuple[int, int] = (20, 20)
+    show_temperature: bool = True
+    temperature_source: str = "purpleair"
+    temperature_offset: float = -8.0
+    temperature_endpoint: str = "https://glacier.org/scripts/post_temp.cgi"
+    temperature_label: str = "°F"
     font_path: str = "fonts/SourceSansVariable-Bold.ttf"
-    font_size: int = 34
+    font_size: int = 44
     label: str = "AQI"
-    label_font_size: int = 19
+    label_font_size: int = 21
+    show_category: bool = True
+    category_font_size: int = 16
+    category_tracking: float = 1.4
+    line_gap: int = 3
+    divider_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 85)
     bg_color: Tuple[int, int, int, int] = (0, 0, 0, 140)
     text_color: Tuple[int, int, int] = (255, 255, 255)
-    dot_radius: int = 12
+    dot_radius: int = 15
     dot_outline_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 90)
     padding: Tuple[int, int] = (16, 12)
     gap: int = 11
     corner_radius: int = 12
-    cache_seconds: int = 300
+    cache_seconds: int = 600
     max_reading_age: int = 3600
     timeout: int = 10
 

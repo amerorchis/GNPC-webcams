@@ -218,24 +218,54 @@ def test_cf1_ratio_ignores_single_digit_readings():
     assert _cf1_ratio(10, 15) == pytest.approx(1.5)
 
 
+def stub_readings(monkeypatch, overlay, pm25=12.0, temperature=None):
+    """Pin both measurements so no test touches the network."""
+    monkeypatch.setattr(overlay, "pm25", lambda: pm25)
+    monkeypatch.setattr(overlay, "temperature", lambda: temperature)
+    return overlay
+
+
 @needs_fonts
-def test_air_quality_overlay_auto_positions_top_right(monkeypatch):
-    air_quality = AirQuality(sensor_index=1)
-    monkeypatch.setattr(air_quality, "pm25", lambda: 12.0)
+def test_air_quality_overlay_anchors_bottom_right_by_default(monkeypatch):
+    air_quality = stub_readings(monkeypatch, AirQuality(sensor_index=1))
 
     air_quality.add_overlay(make_image_buffer(), "")
     result = Image.open(air_quality.overlayed)
     assert result.size == (1200, 1100)
 
-    widget_width, _ = air_quality.size
-    assert air_quality.place == (1200 - widget_width - 24, 24)
+    width, height = air_quality.size
+    assert air_quality.place == (1200 - width - 20, 1100 - height - 20)
+
+
+@needs_fonts
+@pytest.mark.parametrize(
+    "anchor,expected",
+    [
+        ("top-left", "left-top"),
+        ("top-right", "right-top"),
+        ("bottom-left", "left-bottom"),
+        ("bottom-right", "right-bottom"),
+    ],
+)
+def test_air_quality_overlay_honours_every_anchor(monkeypatch, anchor, expected):
+    air_quality = stub_readings(monkeypatch, AirQuality(sensor_index=1, anchor=anchor))
+    air_quality.add_overlay(make_image_buffer(), "")
+
+    x, y = air_quality.place
+    width, height = air_quality.size
+    horizontal = "left" if x == 20 else "right"
+    vertical = "top" if y == 20 else "bottom"
+    assert f"{horizontal}-{vertical}" == expected
+    if horizontal == "right":
+        assert x == 1200 - width - 20
+    if vertical == "bottom":
+        assert y == 1100 - height - 20
 
 
 @needs_fonts
 def test_air_quality_widget_grows_when_the_category_is_shown(monkeypatch):
     def widget_size(**kwargs):
-        overlay = AirQuality(sensor_index=1, **kwargs)
-        monkeypatch.setattr(overlay, "pm25", lambda: 12.0)
+        overlay = stub_readings(monkeypatch, AirQuality(sensor_index=1, **kwargs))
         overlay.add_overlay(make_image_buffer(), "")
         return overlay.size
 
@@ -258,34 +288,77 @@ def capture_render(monkeypatch, overlay):
 
 def test_air_quality_overlay_can_show_raw_pm25(monkeypatch):
     air_quality = AirQuality(sensor_index=1, metric="pm25", label="PM2.5")
-    monkeypatch.setattr(air_quality, "pm25", lambda: 12.34)
+    stub_readings(monkeypatch, air_quality, pm25=12.34)
 
-    value, color, category = capture_render(monkeypatch, air_quality)[0]
+    value, color, category, temperature = capture_render(monkeypatch, air_quality)[0]
     assert value == "12.3"
     assert color == aqi_color(pm25_to_aqi(12.34))
+    assert temperature is None
 
 
 def test_air_quality_overlay_labels_the_category_in_caps(monkeypatch):
-    air_quality = AirQuality(sensor_index=1)
-    monkeypatch.setattr(air_quality, "pm25", lambda: 45.0)
-
+    air_quality = stub_readings(monkeypatch, AirQuality(sensor_index=1), pm25=45.0)
     assert capture_render(monkeypatch, air_quality)[0][2] == "SENSITIVE GROUPS"
 
 
 def test_air_quality_overlay_can_omit_the_category(monkeypatch):
-    air_quality = AirQuality(sensor_index=1, show_category=False)
-    monkeypatch.setattr(air_quality, "pm25", lambda: 45.0)
-
+    air_quality = stub_readings(
+        monkeypatch, AirQuality(sensor_index=1, show_category=False), pm25=45.0
+    )
     assert capture_render(monkeypatch, air_quality)[0][2] is None
 
 
+def test_air_quality_overlay_rounds_the_temperature(monkeypatch):
+    air_quality = stub_readings(
+        monkeypatch, AirQuality(sensor_index=1), pm25=45.0, temperature=61.6
+    )
+    assert capture_render(monkeypatch, air_quality)[0][3] == "62"
+
+
 def test_air_quality_overlay_without_data_passes_image_through(monkeypatch):
-    air_quality = AirQuality(sensor_index=1)
-    monkeypatch.setattr(air_quality, "pm25", lambda: None)
+    air_quality = stub_readings(monkeypatch, AirQuality(sensor_index=1), pm25=None)
 
     air_quality.add_overlay(make_image_buffer(), "")
     result = Image.open(air_quality.overlayed)
     assert result.size == (1200, 1100)
+
+
+@needs_fonts
+def test_air_quality_badge_is_square_when_both_readings_are_present(monkeypatch):
+    air_quality = stub_readings(
+        monkeypatch, AirQuality(sensor_index=1), pm25=45.0, temperature=61.0
+    )
+    air_quality.add_overlay(make_image_buffer(), "")
+    width, height = air_quality.size
+    assert width == height
+
+
+@needs_fonts
+def test_air_quality_badge_collapses_when_only_one_reading_survives(monkeypatch):
+    """A square with an empty half would read as broken."""
+    aqi_only = stub_readings(monkeypatch, AirQuality(sensor_index=1), pm25=45.0)
+    aqi_only.add_overlay(make_image_buffer(), "")
+    assert aqi_only.size[0] > aqi_only.size[1]
+
+    temp_only = stub_readings(
+        monkeypatch, AirQuality(sensor_index=1), pm25=None, temperature=61.0
+    )
+    temp_only.add_overlay(make_image_buffer(), "")
+    assert temp_only.size[0] > temp_only.size[1]
+
+
+@needs_fonts
+def test_air_quality_badge_omits_the_dot_when_only_temperature_survives(monkeypatch):
+    """The dot encodes AQI severity, so it must not appear without an AQI."""
+    temp_only = stub_readings(
+        monkeypatch, AirQuality(sensor_index=1), pm25=None, temperature=61.0
+    )
+    both = stub_readings(
+        monkeypatch, AirQuality(sensor_index=1), pm25=45.0, temperature=61.0
+    )
+    temp_only.add_overlay(make_image_buffer(), "")
+    both.add_overlay(make_image_buffer(), "")
+    assert temp_only.size[0] < both.size[0]
 
 
 class FakeResponse:
@@ -338,7 +411,7 @@ def test_fetch_reading_reads_the_ten_minute_average(monkeypatch, purple_air):
     assert calls[0][1]["headers"]["X-API-Key"] == "test-key"
 
 
-def test_only_the_three_unavoidable_fields_are_billed(monkeypatch, purple_air):
+def test_only_the_unavoidable_fields_are_billed(monkeypatch, purple_air):
     """Each extra field costs points, and pm2.5_atm/last_seen come free."""
     calls = []
     monkeypatch.setattr(
@@ -347,9 +420,38 @@ def test_only_the_three_unavoidable_fields_are_billed(monkeypatch, purple_air):
         lambda url, **kw: calls.append(kw) or FakeResponse(sensor_payload()),
     )
 
+    purple_air.show_temperature = False
     purple_air.fetch_reading()
     requested = calls[0]["params"]["fields"].split(",")
     assert sorted(requested) == ["humidity", "pm2.5_10minute", "pm2.5_cf_1"]
+
+
+def test_temperature_is_only_billed_when_purpleair_supplies_it(purple_air):
+    purple_air.show_temperature = False
+    assert "temperature" not in purple_air._billed_fields()
+
+    purple_air.show_temperature = True
+    purple_air.temperature_source = "endpoint"
+    assert "temperature" not in purple_air._billed_fields()
+
+    purple_air.temperature_source = "purpleair"
+    assert "temperature" in purple_air._billed_fields()
+
+
+def test_temperature_applies_the_enclosure_offset(purple_air):
+    purple_air.fetch_reading = lambda: {"pm25": 10.0, "temperature": 71}
+    assert purple_air.temperature() == 71 + purple_air.temperature_offset
+
+
+def test_temperature_is_none_when_the_sensor_omits_it(purple_air):
+    purple_air.fetch_reading = lambda: {"pm25": 10.0, "temperature": None}
+    assert purple_air.temperature() is None
+
+
+def test_temperature_can_be_switched_off(purple_air):
+    purple_air.show_temperature = False
+    purple_air.fetch_reading = lambda: {"pm25": 10.0, "temperature": 71}
+    assert purple_air.temperature() is None
 
 
 def test_staleness_comes_from_the_free_stats_timestamp(monkeypatch, purple_air):

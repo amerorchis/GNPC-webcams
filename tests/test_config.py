@@ -67,6 +67,48 @@ def test_single_item_groups_unwrap_to_plain_overlays():
     assert all(not isinstance(o, CompositeOverlay) for o in webcam.overlays)
 
 
+def test_air_quality_config_defaults_match_the_overlay():
+    """The factory splats the dataclass, so a stale default here wins silently."""
+    import dataclasses
+    import inspect
+
+    params = inspect.signature(AirQuality).parameters
+    overlay_defaults = {
+        name: param.default
+        for name, param in params.items()
+        if param.default is not inspect.Parameter.empty
+    }
+
+    def same(a, b):
+        # YAML gives lists where the overlay defaults to tuples
+        if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+            return tuple(a) == tuple(b)
+        return a == b
+
+    mismatched = {}
+    for field in dataclasses.fields(AirQualityConfig):
+        if field.name not in params:
+            mismatched[field.name] = (field.default, "not an AirQuality argument")
+        elif field.default is not dataclasses.MISSING and not same(
+            field.default, overlay_defaults.get(field.name)
+        ):
+            mismatched[field.name] = (field.default, overlay_defaults[field.name])
+
+    assert not mismatched, f"config/overlay defaults drifted: {mismatched}"
+
+
+def test_air_quality_config_covers_every_overlay_option():
+    """A new AirQuality argument is unreachable from YAML until it is added here."""
+    import dataclasses
+    import inspect
+
+    config_fields = {f.name for f in dataclasses.fields(AirQualityConfig)}
+    overlay_args = {
+        name for name in inspect.signature(AirQuality).parameters if name != "self"
+    }
+    assert overlay_args - config_fields == set()
+
+
 def test_unknown_overlay_type_is_rejected():
     with pytest.raises(ValueError):
         parse_overlay({"type": "sparkles", "place": [0, 0], "size": [1, 1]})

@@ -71,7 +71,9 @@ webcams:
           size: [612, 137]
           img: overlays/logo-shaded.png
           subname: nps
-      # GNPC feed: logo plus the Many Glacier Ranger Station air quality widget.
+      # GNPC feed: logo plus the Many Glacier Ranger Station conditions badge.
+      # It sits bottom-right over the lake, where it hides nothing — the top
+      # corner covered the ridgeline.
       - - type: logo
           place: [0, 944]
           size: [612, 137]
