@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    env:
+      # Production runs 3.11. .python-version is untracked, so CI has to be told
+      # rather than inheriting whatever the runner image ships.
+      UV_PYTHON: "3.11"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.10"
+          enable-cache: true
+
+      - name: Install Python 3.11
+        run: uv python install 3.11
+
+      # Pinned to the ruff in .pre-commit-config.yaml so CI and the pre-commit
+      # hook can never disagree about what counts as clean.
+      - name: Lint
+        run: uvx ruff@0.12.9 check .
+
+      - name: Check formatting
+        run: uvx ruff@0.12.9 format --check .
+
+      # --locked fails the run if uv.lock has drifted from pyproject.toml.
+      # Font-dependent tests skip themselves here: fonts are untracked.
+      - name: Test
+        run: uv run --locked pytest
+
+  deploy:
+    name: Deploy to gnpic
+    needs: test
+    # The only path to the Pi, and the reason a fork PR cannot reach it: pull
+    # request events fail this check, and only collaborators can dispatch or
+    # push to main. `needs: test` means a red suite never deploys.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, gnpic]
+    concurrency:
+      # One deploy at a time; queue rather than cancel, so an interrupted run
+      # can't leave the checkout half-updated.
+      group: deploy-gnpic
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        run: ./scripts/deploy.sh
