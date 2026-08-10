@@ -6,6 +6,7 @@ from config import (
     AirQualityConfig,
     LogoConfig,
     WebcamConfig,
+    create_overlay_from_config,
     create_webcam_from_config,
     load_config,
     parse_overlay,
@@ -111,26 +112,33 @@ def test_air_quality_config_covers_every_overlay_option():
     assert overlay_args - config_fields == set()
 
 
-def test_two_medicine_is_fetched_over_http():
+@pytest.mark.parametrize(
+    "name, url, sensor_index",
+    [
+        # sensor_index is the PurpleAir unit nearest that camera
+        ("tm", "https://www.nps.gov/webcams-glac/TwoMedicine.jpg", 192041),
+        ("stmary", "https://www.nps.gov/webcams-glac/StMaryPTZ.jpg", 83937),
+    ],
+)
+def test_nps_cameras_are_fetched_over_http(name, url, sensor_index):
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
-    tm = by_name["tm"]
-    assert tm.url == "https://www.nps.gov/webcams-glac/TwoMedicine.jpg"
-    assert tm.file_name_on_server is None
+    camera = by_name[name]
+    assert camera.url == url
+    assert camera.file_name_on_server is None
 
-    webcam = create_webcam_from_config(tm)
+    webcam = create_webcam_from_config(camera)
     assert isinstance(webcam, HttpWebcam)
-    assert webcam.url == tm.url
+    assert webcam.url == url
 
     # One published feed: the GNPC logo plus the conditions badge
     assert len(webcam.overlays) == 1
     composite = webcam.overlays[0]
     assert isinstance(composite, CompositeOverlay)
     assert [type(o) for o in composite.overlays] == [Logo, AirQuality]
-    assert composite.get_overlayed_img("tm")[1] == "tm.jpg"
-    # PurpleAir "Two Medicine", 0.1 mi from the camera
-    assert composite.overlays[1].sensor_index == 192041
+    assert composite.get_overlayed_img(name)[1] == f"{name}.jpg"
+    assert composite.overlays[1].sensor_index == sensor_index
 
 
 def test_ftp_cameras_are_not_http_cameras():
@@ -157,11 +165,40 @@ def test_unknown_overlay_type_is_rejected():
         parse_overlay({"type": "sparkles", "place": [0, 0], "size": [1, 1]})
 
 
-def test_mg_air_quality_only_on_the_non_nps_feed():
+# Cameras that publish both an NPS and a GNPC feed, with the sensor whose
+# reading belongs on the GNPC one
+TWO_FEED_BADGE_CAMERAS = [
+    ("mg", 111457),  # PurpleAir "Many Glacier Ranger Station"
+    ("dark_sky", 83937),  # PurpleAir "St. Mary - Visitor Center"
+]
+
+
+@pytest.mark.parametrize("name", ["dark_sky", "stmary"])
+def test_st_mary_badges_do_not_buy_the_dead_temperature_field(name):
+    """Sensor 83937 reports no temperature, so the field is not paid for."""
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
-    groups = by_name["mg"].logo_placements
+    badges = [
+        o
+        for group in by_name[name].logo_placements
+        for o in group
+        if isinstance(o, AirQualityConfig)
+    ]
+    assert len(badges) == 1
+    assert badges[0].sensor_index == 83937
+    assert badges[0].show_temperature is False
+
+    overlay = create_overlay_from_config(badges[0])
+    assert "temperature" not in overlay._billed_fields()
+
+
+@pytest.mark.parametrize("name, sensor_index", TWO_FEED_BADGE_CAMERAS)
+def test_air_quality_only_on_the_non_nps_feed(name, sensor_index):
+    config = load_config("webcams.yaml")
+    by_name = {w.name: w for w in config.webcams}
+
+    groups = by_name[name].logo_placements
     nps_group = [g for g in groups if any(o.subname == "nps" for o in g)]
     gnpc_group = [g for g in groups if not any(o.subname == "nps" for o in g)]
     assert len(nps_group) == 1 and len(gnpc_group) == 1
@@ -169,18 +206,18 @@ def test_mg_air_quality_only_on_the_non_nps_feed():
     assert not any(isinstance(o, AirQualityConfig) for o in nps_group[0])
     air_quality = [o for o in gnpc_group[0] if isinstance(o, AirQualityConfig)]
     assert len(air_quality) == 1
-    # PurpleAir "Many Glacier Ranger Station"
-    assert air_quality[0].sensor_index == 111457
+    assert air_quality[0].sensor_index == sensor_index
 
 
-def test_mg_builds_a_composite_for_the_gnpc_feed_only():
+@pytest.mark.parametrize("name, sensor_index", TWO_FEED_BADGE_CAMERAS)
+def test_a_composite_is_built_for_the_gnpc_feed_only(name, sensor_index):
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
-    webcam = create_webcam_from_config(by_name["mg"])
-    by_file = {o.get_overlayed_img("mg")[1]: o for o in webcam.overlays}
+    webcam = create_webcam_from_config(by_name[name])
+    by_file = {o.get_overlayed_img(name)[1]: o for o in webcam.overlays}
 
-    assert isinstance(by_file["mg_nps.jpg"], Logo)
-    composite = by_file["mg.jpg"]
+    assert isinstance(by_file[f"{name}_nps.jpg"], Logo)
+    composite = by_file[f"{name}.jpg"]
     assert isinstance(composite, CompositeOverlay)
     assert [type(o) for o in composite.overlays] == [Logo, AirQuality]

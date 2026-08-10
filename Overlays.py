@@ -489,8 +489,15 @@ class AirQuality(Overlay):
         self.timeout = timeout
 
     def _billed_fields(self):
-        """The PurpleAir fields worth paying for, given how this badge is set up."""
-        fields = ["pm2.5_10minute", "pm2.5_cf_1", "humidity"]
+        """The PurpleAir fields worth paying for, given how this badge is set up.
+
+        `humidity_a` rather than `humidity`: channel A's reading costs 1 point
+        where the A/B average costs 2, and these sensors carry a humidity module
+        on channel A only, so the two are the same number. Should a two-module
+        sensor ever be used, the channels would have to disagree by ~12 %RH to
+        move the corrected PM2.5 by a single microgram.
+        """
+        fields = ["pm2.5_10minute", "pm2.5_cf_1", "humidity_a"]
         if self.show_temperature and self.temperature_source == "purpleair":
             fields.append("temperature")
         return fields
@@ -598,7 +605,7 @@ class AirQuality(Overlay):
 
             reading = {
                 "pm25": pm25,
-                "humidity": sensor.get("humidity"),
+                "humidity": sensor.get("humidity_a"),
                 "temperature": sensor.get("temperature"),
                 # stats.pm2.5 is the current ATM reading rounded to a whole
                 # number — free with the 10-minute average, and precise enough

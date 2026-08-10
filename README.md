@@ -1,6 +1,6 @@
 # GNPC Webcams Operation
 
-Automated webcam image and video processing system for the Glacier National Park Conservancy. Downloads webcam images from glacier.org FTP (or, for Two Medicine, from the NPS webcam page), applies GNPC logos with custom positioning, adds professional timestamps, and uploads processed images to an HTML server for public viewing.
+Automated webcam image and video processing system for the Glacier National Park Conservancy. Downloads webcam images from glacier.org FTP (and, for Two Medicine and St. Mary, from the NPS webcam page), applies GNPC logos with custom positioning, adds professional timestamps, and uploads processed images to an HTML server for public viewing.
 
 ## Architecture
 
@@ -45,12 +45,17 @@ A webcam draws its frame from exactly one source — the loader rejects an entry
 | `file_name_on_server` | a file on the glacier.org FTP server, timestamped from its `MDTM` reply |
 | `url` | an HTTP(S) URL, timestamped from the response's `Last-Modified` header |
 
-`tm` is the only URL-sourced camera: Two Medicine has no feed into the glacier.org FTP server, so it is fetched from the NPS webcam page with NPS's permission and republished with GNPC branding. NPS burns its own title/timestamp bar into the top-left corner of that frame, so the feed leaves `cover_date` off rather than stamping a second date. A URL-sourced camera is otherwise configured, overlaid and uploaded exactly like an FTP one.
+`tm` (Two Medicine) and `stmary` (St. Mary, looking up the valley from the visitor center) are the URL-sourced cameras. Neither feeds into the glacier.org FTP server, so both are fetched from the NPS webcam page with NPS's permission and republished with GNPC branding. NPS burns its own caption and timestamp into the top edge of those frames, so both leave `cover_date` off rather than stamping a second date. A URL-sourced camera is otherwise configured, overlaid and uploaded exactly like an FTP one.
 
 ```yaml
 - name: tm
   url: https://www.nps.gov/webcams-glac/TwoMedicine.jpg
+
+- name: stmary
+  url: https://www.nps.gov/webcams-glac/StMaryPTZ.jpg
 ```
+
+Each publishes a single image. NPS hosts the originals, so an `_nps` variant of either would have no consumer. Note that `stmary` and `smv` are different cameras pointed at the same valley from opposite ends — `smv` looks down it from Logan Pass.
 
 ### Overlay Types
 
@@ -62,19 +67,25 @@ A placement list may not mix bare overlays with nested groups — if any placeme
 
 ### Conditions Badge (Air Quality + Temperature)
 
-Two feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
+Four feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
+
+| feed | sensor | note |
+|---|---|---|
+| `mg` | 111457 "Many Glacier Ranger Station" | GNPC feed only; the NPS feed of the same camera deliberately has no badge |
+| `tm` | 192041 "Two Medicine" | 0.1 mi from the camera |
+| `stmary` | 83937 "St. Mary - Visitor Center" | AQI only — see below |
+| `dark_sky` | 83937 "St. Mary - Visitor Center" | same sensor, right by the observatory; GNPC feed only |
 
 ```yaml
-# mg, GNPC feed only — the NPS feed of the same camera deliberately has no badge
 - type: air_quality
-  sensor_index: 111457   # PurpleAir "Many Glacier Ranger Station"
-
-# tm
-- type: air_quality
-  sensor_index: 192041   # PurpleAir "Two Medicine", 0.1 mi from the camera
+  sensor_index: 111457
 ```
 
-It sits bottom-right on purpose. On `mg` the lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. The same corner works on `tm` — the far shoreline and treetops — while its top-right is where the mountains sit. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
+The St. Mary sensor reports PM2.5 but no temperature and no humidity — that module is dead or absent — so its two badges collapse to the AQI-only pill and the EPA correction falls back to its RH 50 default. Both carry `show_temperature: false`, which stops paying 2 points a call for a field that always comes back null. That is the one setting to remove if the module is ever repaired; until then the badge would look identical either way, so nothing but the bill changes.
+
+The two St. Mary feeds share one cache entry, keyed by sensor index, so the second camera to run in a cycle reuses the first one's reading instead of paying for its own call.
+
+It sits bottom-right on purpose. On `mg` the lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. The same corner works on `tm` and `stmary` — treetops and foreground grass — while their top-right is where the mountains sit. On the `dark_sky` allsky frame it lands in the black corner outside the fisheye circle, covering no sky at all; that frame is smaller (1021×687) than the 1920×1080 cameras, so the badge reads proportionally larger there, matching the logo, which is scaled up to suit that frame too. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
 
 #### Layout collapse
 
@@ -109,18 +120,22 @@ Readings are cached for 10 minutes in the system temp directory (`gnpc-purpleair
 
 #### API point cost
 
-PurpleAir bills per call as `base_cost + (cost_of_all_fields × rows)`. A single-sensor query is one row with a base of 1 point, and the fields this overlay needs cost 2 points each, so a call costs **9 points**:
+PurpleAir bills per call as `base_cost + (cost_of_all_fields × rows)`. A single-sensor query is one row with a base of 1 point, so a call costs **8 points** where the badge shows temperature and **6 points** where it doesn't:
 
-| field | why it can't be dropped |
-|---|---|
-| `pm2.5_10minute` | the reading itself |
-| `pm2.5_cf_1` | numerator of the ATM→CF=1 ratio |
-| `humidity` | input to the EPA correction |
-| `temperature` | the badge's temperature (drop with `show_temperature: false`) |
+| field | points | why it can't be dropped |
+|---|---|---|
+| `pm2.5_10minute` | 2 | the reading itself |
+| `pm2.5_cf_1` | 2 | numerator of the ATM→CF=1 ratio |
+| `humidity_a` | 1 | input to the EPA correction |
+| `temperature` | 2 | the badge's temperature (drop with `show_temperature: false`) |
+
+Humidity is bought per channel on purpose: `humidity_a` costs 1 point where the A/B average `humidity` costs 2, and these sensors carry a humidity module on channel A only, so the two return the same number. Even on a two-module sensor the channels would have to disagree by about 12 %RH to shift the corrected PM2.5 by a single microgram.
+
+Querying the sensors one at a time is the cheap way round, despite appearances. Batching them into one `GET /v1/sensors` call loses on both terms of the formula: that endpoint's base cost is 5 points against the single-sensor endpoint's 1, and it returns only the flat columns you pay for — no `stats` block — so the two values below that currently arrive free would have to be bought as fields. For three sensors that is 5 + 12×3 = 41 points a cycle against the 22 the three separate calls cost. Batching only wins for callers who omit `fields` entirely and get billed for every one.
 
 Three other values arrive **free** inside the `stats` block that comes with `pm2.5_10minute`, so they must not be requested as fields: `stats.pm2.5` (the current ATM reading, rounded — the ratio's denominator, making `pm2.5_atm` redundant), and `stats.time_stamp` (identical to `last_seen`, used for the staleness check). Adding either back costs 2 points a call for nothing.
 
-Each sensor is queried and cached separately, so at the 10-minute cache cadence the two badges cost ~2,600 points/day between them, or roughly $0.78/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
+Each sensor is queried and cached separately, so cost scales with sensors, not feeds: at the 10-minute cache cadence the three sensors behind the four badges cost 22 points a cycle — 8 each for Many Glacier and Two Medicine, 6 for St. Mary — or ~3,170 points/day, roughly $0.95/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
 
 ## Environment Setup
 
@@ -153,7 +168,7 @@ Errors are printed to stderr so cron emails them even with stdout discarded. The
 
 Only one run executes at a time. A run holds an exclusive `flock` on `webcams.lock` for its duration; if a slow run is still going when cron fires the next minute, that run logs a skip and exits without touching FTP. This keeps stacked runs from exhausting the server's per-IP connection limit (`421 Too many connections`). The lock is held by the process, so a killed or crashed run releases it automatically — a leftover `webcams.lock` file is normal and never needs to be deleted by hand.
 
-The system processes 6 webcam images and 1 overnight timelapse video using threading for parallel processing, with automatic retry logic for both FTP and HTTP downloads and comprehensive logging. FTP connections use FTPS when the server supports it, falling back to plain FTP. All file paths resolve relative to the repository directory, so the cron `cd` is optional.
+The system processes 7 webcam images and 1 overnight timelapse video using threading for parallel processing, with automatic retry logic for both FTP and HTTP downloads and comprehensive logging. FTP connections use FTPS when the server supports it, falling back to plain FTP. All file paths resolve relative to the repository directory, so the cron `cd` is optional.
 
 ## Testing
 

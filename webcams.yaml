@@ -6,15 +6,23 @@ webcams:
   - name: dark_sky
     file_name_on_server: stmaryallsky-resize.jpg
     logo_placements:
-      - type: logo
-        place: [0, 604]
-        size: [299, 68]
-        subname: nps
-        cover_date: true
-      - type: logo
-        place: [0, 619]
-        size: [299, 68]
-        cover_date: true
+      # NPS feed: logo and timestamp only, no conditions badge.
+      - - type: logo
+          place: [0, 604]
+          size: [299, 68]
+          subname: nps
+          cover_date: true
+      # GNPC feed: adds the St. Mary conditions badge, in the corner outside
+      # the fisheye circle where it covers no sky.
+      - - type: logo
+          place: [0, 619]
+          size: [299, 68]
+          cover_date: true
+        - type: air_quality
+          sensor_index: 83937  # PurpleAir "St. Mary - Visitor Center"
+          # See the stmary entry: that sensor reports no temperature, so the
+          # field is not bought here either.
+          show_temperature: false
 
   - name: lpp
     file_name_on_server: lpp.jpg
@@ -94,6 +102,24 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 192041  # PurpleAir "Two Medicine", 0.1 mi from the camera
+
+  # St. Mary, looking up the valley from the visitor center — also republished
+  # from the NPS webcam page with their permission, and a different camera from
+  # smv (which looks the other way, down the valley from Logan Pass). NPS burns
+  # its own caption/timestamp into the top edge, so no date is stamped here.
+  - name: stmary
+    url: https://www.nps.gov/webcams-glac/StMaryPTZ.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 83937  # PurpleAir "St. Mary - Visitor Center"
+          # That sensor's temperature/humidity module reports nothing, so the
+          # field is not bought. Drop this line if the module is ever repaired
+          # and the badge will show temperature again.
+          show_temperature: false
 
 allsky_videos:
   - name: allsky

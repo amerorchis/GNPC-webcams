@@ -385,7 +385,7 @@ class FakeResponse:
 def sensor_payload(pm25=20.0, last_seen=None, humidity=50, atm=20, cf1=None):
     """A response shaped like the one the three billed fields actually return."""
     sensor = {
-        "humidity": humidity,
+        "humidity_a": humidity,
         "stats": {
             "pm2.5": atm,
             "pm2.5_10minute": pm25,
@@ -433,7 +433,9 @@ def test_only_the_unavoidable_fields_are_billed(monkeypatch, purple_air):
     purple_air.show_temperature = False
     purple_air.fetch_reading()
     requested = calls[0]["params"]["fields"].split(",")
-    assert sorted(requested) == ["humidity", "pm2.5_10minute", "pm2.5_cf_1"]
+    # humidity_a, not humidity: same reading on these sensors for half the points
+    assert sorted(requested) == ["humidity_a", "pm2.5_10minute", "pm2.5_cf_1"]
+    assert "humidity" not in requested
 
 
 def test_temperature_is_only_billed_when_purpleair_supplies_it(purple_air):
