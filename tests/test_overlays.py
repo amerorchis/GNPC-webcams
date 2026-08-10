@@ -6,7 +6,7 @@ import time
 
 import pytest
 import requests
-from PIL import Image
+from PIL import Image, ImageChops
 
 import Overlays
 from Overlays import (
@@ -316,11 +316,21 @@ def test_air_quality_overlay_rounds_the_temperature(monkeypatch):
 
 
 def test_air_quality_overlay_without_data_passes_image_through(monkeypatch):
-    air_quality = stub_readings(monkeypatch, AirQuality(sensor_index=1), pm25=None)
+    """Neither reading arrived, so the frame must publish completely untouched."""
+    air_quality = stub_readings(
+        monkeypatch, AirQuality(sensor_index=1), pm25=None, temperature=None
+    )
 
-    air_quality.add_overlay(make_image_buffer(), "")
-    result = Image.open(air_quality.overlayed)
-    assert result.size == (1200, 1100)
+    source = make_image_buffer()
+    air_quality.add_overlay(source, "")
+
+    source.seek(0)
+    before = Image.open(source).convert("RGB")
+    after = Image.open(air_quality.overlayed).convert("RGB")
+    assert after.size == (1200, 1100)
+    # Not just the same size — the same pixels, with nothing drawn on top
+    assert ImageChops.difference(before, after).getbbox() is None
+    assert air_quality.size == (0, 0)
 
 
 @needs_fonts
