@@ -44,6 +44,68 @@ def test_download_retries_on_transient_425(monkeypatch):
     WebcamClass._download_ftp = None
 
 
+class VanishingFileFTP:
+    """FTP stub whose RETR 550s while the frame is being replaced upstream.
+
+    Writes a partial frame before failing, the way a server that deletes the
+    file mid-transfer would.
+    """
+
+    def __init__(self, counter, fail_times):
+        self.counter = counter
+        self.fail_times = fail_times
+
+    def retrbinary(self, cmd, callback):
+        if self.counter[0] < self.fail_times:
+            self.counter[0] += 1
+            callback(b"half-a-")
+            raise error_perm("550 Can't open dark_sky.jpg: No such file or directory")
+        callback(b"jpeg-bytes")
+
+    def sendcmd(self, cmd):
+        return "213 20240101120000"
+
+
+def test_missing_file_is_retried_for_every_attempt(monkeypatch):
+    """The frame is swapped in place, so a 550 is usually gone a second later."""
+    WebcamClass._download_ftp = None
+    counter = [0]
+    monkeypatch.setattr(
+        Webcam,
+        "connect_ftp",
+        lambda *a, **k: VanishingFileFTP(counter, fail_times=2),
+    )
+
+    cam = WebcamClass(name="dark_sky", file_name_on_server="stmaryallsky-resize.jpg")
+    cam._download_image(retry_delay=0)  # Must not raise FileNotFoundError
+
+    assert counter[0] == 2  # Two 550s ridden out, not just one
+    # The bytes from the failed attempts are dropped instead of being prepended
+    # to the frame that finally arrives.
+    assert cam.file_buffer.getvalue() == b"jpeg-bytes"
+
+    WebcamClass._download_ftp = None
+
+
+def test_a_file_that_never_appears_still_fails(monkeypatch):
+    """A source that is genuinely gone has to reach the cron email."""
+    WebcamClass._download_ftp = None
+    counter = [0]
+    monkeypatch.setattr(
+        Webcam,
+        "connect_ftp",
+        lambda *a, **k: VanishingFileFTP(counter, fail_times=99),
+    )
+
+    cam = WebcamClass(name="dark_sky", file_name_on_server="stmaryallsky-resize.jpg")
+    with pytest.raises(FileNotFoundError):
+        cam._download_image(retry_delay=0)
+
+    assert counter[0] == 3  # Every attempt used before giving up
+
+    WebcamClass._download_ftp = None
+
+
 def test_download_closes_stale_connection_before_reconnecting():
     """A dead shared connection must be QUIT, not just dropped.
 

@@ -158,19 +158,26 @@ class Webcam:
                 return  # Success - exit retry loop
 
             except error_perm as e:
-                if str(e).startswith("550"):
-                    logger.info(f"  {self.name}: File not found, waiting 6 seconds...")
-                    sleep(6)
-                    try:
-                        download_attempt()
-                        logger.debug(f"  {self.name}: Download successful on retry")
-                        return  # Success - exit retry loop
-                    except error_perm as exc:
-                        raise FileNotFoundError(
-                            f"{self.name} wasn't found in the folder."
-                        ) from exc
-                else:
+                if not str(e).startswith("550"):
                     raise
+
+                # The upstream replaces each frame in place every half minute or
+                # so, and the swap isn't atomic: a RETR that lands between the
+                # delete and the new upload gets a 550 for a file that is there
+                # the rest of the time. The gap is under a second, so spend the
+                # budget on more attempts rather than one long wait: two rounds
+                # plus main's ROUND_INTERVAL have to fit inside a cron minute.
+                self.file_buffer = io.BytesIO()  # Discard any partial read
+                if attempt < max_retries - 1:
+                    logger.info(
+                        f"  {self.name}: File not found, "
+                        f"retrying in {retry_delay:.1f}s..."
+                    )
+                    sleep(retry_delay)
+                else:
+                    raise FileNotFoundError(
+                        f"{self.name} wasn't found in the folder."
+                    ) from e
 
             except (
                 BrokenPipeError,
