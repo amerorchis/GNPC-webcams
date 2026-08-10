@@ -99,13 +99,18 @@ def connect_ftp(server, user, password):
 
 
 class Webcam:
-    # Shared FTP connections for all webcam instances
+    # Shared FTP connections for all webcam instances. Subclasses assign through
+    # `Webcam`, never `cls`/`self.__class__`: a subclass attribute would shadow
+    # these and quietly open a second pool that main.py's _close_connections()
+    # never releases.
     _download_ftp = None
     _upload_ftp = None
     _download_lock = threading.Lock()
     _upload_lock = threading.Lock()
 
-    def __init__(self, name, file_name_on_server, logo_placements=None, blackout=False):
+    def __init__(
+        self, name, file_name_on_server=None, logo_placements=None, blackout=False
+    ):
         self.name = name
         self.file_buffer = io.BytesIO()
         self.file_name_on_server = file_name_on_server
@@ -185,7 +190,7 @@ class Webcam:
                 # Closed while holding the lock so the slot is given back before
                 # another camera thread opens its replacement.
                 with self._download_lock:
-                    stale, self.__class__._download_ftp = self._download_ftp, None
+                    stale, Webcam._download_ftp = Webcam._download_ftp, None
                     close_ftp(stale)
                 self.file_buffer = io.BytesIO()  # Reset buffer
                 if attempt < max_retries - 1:
@@ -282,7 +287,7 @@ class Webcam:
                         # Reset connection on error, closing it so the server
                         # releases its slot instead of holding the session until
                         # it times out.
-                        stale, self.__class__._upload_ftp = self._upload_ftp, None
+                        stale, Webcam._upload_ftp = Webcam._upload_ftp, None
                         close_ftp(stale)
                         if attempt < max_retries - 1:
                             delay = retry_delay_for(retry_delay, attempt, e)
@@ -298,6 +303,23 @@ class Webcam:
 
             self._process_overlay_files(upload_file)
 
+    def _record_mod_time(self, mod_time_utc: datetime):
+        """Store when the source image was taken, in Mountain Time.
+
+        Takes an aware UTC timestamp so any source can feed it — an FTP MDTM
+        reply or an HTTP Last-Modified header.
+        """
+        mod_time = mod_time_utc.astimezone(ZoneInfo("America/Denver"))
+        self.mod_time = mod_time
+        # lstrip("0") drops the leading zero of the hour portably
+        # (strftime's %-I is glibc/macOS-only)
+        self.mod_time_str = (
+            mod_time.strftime("%I:%M %p %b. %d, %Y")
+            .lstrip("0")
+            .replace("AM", "am")
+            .replace("PM", "pm")
+        )
+
     def _set_modification_time(self, ftp: FTP):
         # Send the MDTM command to the FTP server
         try:
@@ -306,19 +328,10 @@ class Webcam:
             # The response will be in the format: '213 YYYYMMDDHHMMSS'
             if response.startswith("213"):
                 time_str = response[4:].strip()
-                # Parse as UTC, then convert to Mountain Time
-                mod_time_utc = datetime.strptime(time_str, "%Y%m%d%H%M%S").replace(
-                    tzinfo=ZoneInfo("UTC")
-                )
-                mod_time = mod_time_utc.astimezone(ZoneInfo("America/Denver"))
-                self.mod_time = mod_time
-                # lstrip("0") drops the leading zero of the hour portably
-                # (strftime's %-I is glibc/macOS-only)
-                self.mod_time_str = (
-                    mod_time.strftime("%I:%M %p %b. %d, %Y")
-                    .lstrip("0")
-                    .replace("AM", "am")
-                    .replace("PM", "pm")
+                self._record_mod_time(
+                    datetime.strptime(time_str, "%Y%m%d%H%M%S").replace(
+                        tzinfo=ZoneInfo("UTC")
+                    )
                 )
 
         except error_perm as e:
@@ -398,7 +411,7 @@ class Webcam:
         if cls._download_ftp is None:
             logger.debug("    Creating new download FTP connection...")
             try:
-                cls._download_ftp = connect_ftp(
+                Webcam._download_ftp = connect_ftp(
                     os.getenv("server"),
                     os.getenv("ftp_get_user"),
                     os.getenv("ftp_get_pwd"),
@@ -406,13 +419,13 @@ class Webcam:
                 logger.debug("    Download FTP connection established")
             except Exception as e:
                 logger.error(f"    Failed to create download connection: {e}")
-                cls._download_ftp = None
+                Webcam._download_ftp = None
                 raise ConnectionError(
                     f"Failed to create download FTP connection: {e}"
                 ) from e
         else:
             logger.debug("    Reusing existing download FTP connection")
-        return cls._download_ftp
+        return Webcam._download_ftp
 
     @classmethod
     def _get_upload_connection(cls):
@@ -422,25 +435,25 @@ class Webcam:
         """
         if cls._upload_ftp is None:
             try:
-                cls._upload_ftp = connect_ftp(
+                Webcam._upload_ftp = connect_ftp(
                     os.getenv("server"),
                     os.getenv("username"),
                     os.getenv("password"),
                 )
             except Exception as e:
-                cls._upload_ftp = None
+                Webcam._upload_ftp = None
                 raise ConnectionError(
                     f"Failed to create upload FTP connection: {e}"
                 ) from e
-        return cls._upload_ftp
+        return Webcam._upload_ftp
 
     @classmethod
     def _close_connections(cls):
         """Close all shared FTP connections."""
         with cls._download_lock:
-            close_ftp(cls._download_ftp)
-            cls._download_ftp = None
+            close_ftp(Webcam._download_ftp)
+            Webcam._download_ftp = None
 
         with cls._upload_lock:
-            close_ftp(cls._upload_ftp)
-            cls._upload_ftp = None
+            close_ftp(Webcam._upload_ftp)
+            Webcam._upload_ftp = None

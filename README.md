@@ -1,12 +1,13 @@
 # GNPC Webcams Operation
 
-Automated webcam image and video processing system for the Glacier National Park Conservancy. Downloads webcam images from glacier.org FTP, applies GNPC logos with custom positioning, adds professional timestamps, and uploads processed images to an HTML server for public viewing.
+Automated webcam image and video processing system for the Glacier National Park Conservancy. Downloads webcam images from glacier.org FTP (or, for Two Medicine, from the NPS webcam page), applies GNPC logos with custom positioning, adds professional timestamps, and uploads processed images to an HTML server for public viewing.
 
 ## Architecture
 
-The system consists of six main classes:
+The system consists of seven main classes:
 
 - **`Webcam`** - Main image processing class handling FTP download, logo application, timestamp overlay, and upload
+- **`HttpWebcam`** - A `Webcam` whose source frame is fetched from a URL instead of the FTP server; everything after the download is inherited unchanged
 - **`Logo`** - Encapsulates logo placement configuration with custom positioning and sizing  
 - **`Temperature`** - Fetches and overlays temperature data with customizable styling
 - **`AirQuality`** - Fetches a PurpleAir sensor reading and overlays an AQI badge
@@ -33,7 +34,23 @@ webcams:
         img: overlays/logo-shaded.png
 ```
 
-Each entry in `logo_placements` produces one published image; `subname` is appended to the output filename (e.g. `lpp_nps.jpg`). Setting `blackout: true` on a webcam publishes plain black frames in place of the feed (used when a camera is misaimed).
+Each entry in `logo_placements` produces one published image; `subname` is appended to the output filename (e.g. `lpp_nps.jpg`). The published name comes from `name`, so `- name: lpp` uploads `lpp.jpg`. Setting `blackout: true` on a webcam publishes plain black frames in place of the feed (used when a camera is misaimed).
+
+### Image Sources
+
+A webcam draws its frame from exactly one source — the loader rejects an entry that gives both or neither:
+
+| key | source |
+|---|---|
+| `file_name_on_server` | a file on the glacier.org FTP server, timestamped from its `MDTM` reply |
+| `url` | an HTTP(S) URL, timestamped from the response's `Last-Modified` header |
+
+`tm` is the only URL-sourced camera: Two Medicine has no feed into the glacier.org FTP server, so it is fetched from the NPS webcam page with NPS's permission and republished with GNPC branding. NPS burns its own title/timestamp bar into the top-left corner of that frame, so the feed leaves `cover_date` off rather than stamping a second date. A URL-sourced camera is otherwise configured, overlaid and uploaded exactly like an FTP one.
+
+```yaml
+- name: tm
+  url: https://www.nps.gov/webcams-glac/TwoMedicine.jpg
+```
 
 ### Overlay Types
 
@@ -45,14 +62,19 @@ A placement list may not mix bare overlays with nested groups — if any placeme
 
 ### Conditions Badge (Air Quality + Temperature)
 
-The `mg` camera's GNPC feed carries a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI for the [Many Glacier Ranger Station](https://map.purpleair.com/) PurpleAir sensor, and the category wording. The NPS feed of the same camera deliberately does not get it.
+Two feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
 
 ```yaml
+# mg, GNPC feed only — the NPS feed of the same camera deliberately has no badge
 - type: air_quality
   sensor_index: 111457   # PurpleAir "Many Glacier Ranger Station"
+
+# tm
+- type: air_quality
+  sensor_index: 192041   # PurpleAir "Two Medicine", 0.1 mi from the camera
 ```
 
-It sits bottom-right on purpose. The lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
+It sits bottom-right on purpose. On `mg` the lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. The same corner works on `tm` — the far shoreline and treetops — while its top-right is where the mountains sit. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
 
 #### Layout collapse
 
@@ -67,7 +89,7 @@ Temperature and AQI come from measurements that can fail independently, so the b
 
 #### Temperature
 
-The temperature comes from the PurpleAir sensor, which is the only instrument physically at Many Glacier. Its thermometer sits inside the enclosure where the electronics and sunlight both warm it, so the reading runs hot; `temperature_offset` (default `-8.0` °F) is PurpleAir's own published correction, which keeps the badge agreeing with what purpleair.com shows for the sensor. Note that [published evaluations](https://www.mdpi.com/2073-4433/15/4/415) find this correction tends to overcorrect, with real bias averaging nearer 2.6 °C — so treat the number as approximate and adjust `temperature_offset` if it drifts from reality.
+The temperature comes from the same PurpleAir sensor, which at Many Glacier is the only instrument physically on site. Its thermometer sits inside the enclosure where the electronics and sunlight both warm it, so the reading runs hot; `temperature_offset` (default `-8.0` °F) is PurpleAir's own published correction, which keeps the badge agreeing with what purpleair.com shows for the sensor. Note that [published evaluations](https://www.mdpi.com/2073-4433/15/4/415) find this correction tends to overcorrect, with real bias averaging nearer 2.6 °C — so treat the number as approximate and adjust `temperature_offset` if it drifts from reality.
 
 Setting `temperature_source: endpoint` reads `temperature_endpoint` (a plaintext HTTP endpoint) instead, and `show_temperature: false` drops temperature entirely, which also stops paying for the field.
 
@@ -98,7 +120,7 @@ PurpleAir bills per call as `base_cost + (cost_of_all_fields × rows)`. A single
 
 Three other values arrive **free** inside the `stats` block that comes with `pm2.5_10minute`, so they must not be requested as fields: `stats.pm2.5` (the current ATM reading, rounded — the ratio's denominator, making `pm2.5_atm` redundant), and `stats.time_stamp` (identical to `last_seen`, used for the staleness check). Adding either back costs 2 points a call for nothing.
 
-At the 10-minute cache cadence that's ~1,300 points/day, or roughly $0.39/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
+Each sensor is queried and cached separately, so at the 10-minute cache cadence the two badges cost ~2,600 points/day between them, or roughly $0.78/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
 
 ## Environment Setup
 
@@ -131,7 +153,7 @@ Errors are printed to stderr so cron emails them even with stdout discarded. The
 
 Only one run executes at a time. A run holds an exclusive `flock` on `webcams.lock` for its duration; if a slow run is still going when cron fires the next minute, that run logs a skip and exits without touching FTP. This keeps stacked runs from exhausting the server's per-IP connection limit (`421 Too many connections`). The lock is held by the process, so a killed or crashed run releases it automatically — a leftover `webcams.lock` file is normal and never needs to be deleted by hand.
 
-The system processes 5 webcam images and 1 overnight timelapse video using threading for parallel processing, with automatic retry logic for FTP operations and comprehensive logging. Connections use FTPS when the server supports it, falling back to plain FTP. All file paths resolve relative to the repository directory, so the cron `cd` is optional.
+The system processes 6 webcam images and 1 overnight timelapse video using threading for parallel processing, with automatic retry logic for both FTP and HTTP downloads and comprehensive logging. FTP connections use FTPS when the server supports it, falling back to plain FTP. All file paths resolve relative to the repository directory, so the cron `cd` is optional.
 
 ## Testing
 
@@ -139,7 +161,7 @@ The system processes 5 webcam images and 1 overnight timelapse video using threa
 uv run pytest
 ```
 
-Unit tests in `tests/` cover config parsing and overlay composition without touching the network. `tests/manual/` holds standalone debug scripts that hit the live FTP server; run them directly with Python when needed.
+Unit tests in `tests/` cover config parsing, overlay composition and download retries without touching the network. `tests/manual/` holds standalone debug scripts that do hit the live sources; run them directly with Python when needed. `preview_feeds.py <camera>` is the usual one — it downloads a camera's current frame, applies its real overlays, and writes every published feed to `debug-images/` without uploading anything.
 
 ## Deployment
 

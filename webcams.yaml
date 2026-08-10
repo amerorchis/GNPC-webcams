@@ -81,6 +81,20 @@ webcams:
         - type: air_quality
           sensor_index: 111457  # PurpleAir "Many Glacier Ranger Station"
 
+  # Two Medicine comes straight from the NPS webcam page rather than the
+  # glacier.org FTP server (used with NPS's permission). NPS burns its own
+  # title/timestamp bar into the top-left corner, so this feed doesn't stamp
+  # its own date.
+  - name: tm
+    url: https://www.nps.gov/webcams-glac/TwoMedicine.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 192041  # PurpleAir "Two Medicine", 0.1 mi from the camera
+
 allsky_videos:
   - name: allsky
     file_name_on_server: allsky.mp4

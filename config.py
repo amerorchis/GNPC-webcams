@@ -10,6 +10,7 @@ from typing import List, Optional, Tuple, Union
 import yaml
 
 from AllskyVideo import AllskyVideo
+from HttpWebcam import HttpWebcam
 from Overlays import AirQuality, Logo, Temperature
 from paths import resolve_path
 from Webcam import Webcam
@@ -99,12 +100,24 @@ OverlayConfig = Union[LogoConfig, TemperatureConfig, AirQualityConfig]
 
 @dataclass
 class WebcamConfig:
-    """Configuration for a webcam."""
+    """Configuration for a webcam.
+
+    The source is either a file on the glacier.org FTP server
+    (`file_name_on_server`) or a URL (`url`) — exactly one of the two.
+    """
 
     name: str
-    file_name_on_server: str
     logo_placements: List[Union[OverlayConfig, List[OverlayConfig]]]
+    file_name_on_server: Optional[str] = None
+    url: Optional[str] = None
     blackout: bool = False
+
+    def __post_init__(self):
+        if bool(self.file_name_on_server) == bool(self.url):
+            raise ValueError(
+                f"Webcam {self.name!r} needs exactly one source: "
+                "file_name_on_server (FTP) or url (HTTP)"
+            )
 
 
 @dataclass
@@ -172,7 +185,8 @@ def load_config(config_file: str = "webcams.yaml") -> AppConfig:
 
         webcam = WebcamConfig(
             name=webcam_data["name"],
-            file_name_on_server=webcam_data["file_name_on_server"],
+            file_name_on_server=webcam_data.get("file_name_on_server"),
+            url=webcam_data.get("url"),
             logo_placements=logo_placements,
             blackout=webcam_data.get("blackout", False),
         )
@@ -223,6 +237,14 @@ def create_webcam_from_config(webcam_config: WebcamConfig):
         else:
             # Single overlay
             logo_placements.append(create_overlay_from_config(placement))
+
+    if webcam_config.url:
+        return HttpWebcam(
+            name=webcam_config.name,
+            url=webcam_config.url,
+            logo_placements=logo_placements,
+            blackout=webcam_config.blackout,
+        )
 
     return Webcam(
         name=webcam_config.name,

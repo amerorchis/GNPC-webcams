@@ -5,10 +5,12 @@ import pytest
 from config import (
     AirQualityConfig,
     LogoConfig,
+    WebcamConfig,
     create_webcam_from_config,
     load_config,
     parse_overlay,
 )
+from HttpWebcam import HttpWebcam
 from Overlays import AirQuality, CompositeOverlay, Logo
 from Webcam import Webcam
 
@@ -107,6 +109,47 @@ def test_air_quality_config_covers_every_overlay_option():
         name for name in inspect.signature(AirQuality).parameters if name != "self"
     }
     assert overlay_args - config_fields == set()
+
+
+def test_two_medicine_is_fetched_over_http():
+    config = load_config("webcams.yaml")
+    by_name = {w.name: w for w in config.webcams}
+
+    tm = by_name["tm"]
+    assert tm.url == "https://www.nps.gov/webcams-glac/TwoMedicine.jpg"
+    assert tm.file_name_on_server is None
+
+    webcam = create_webcam_from_config(tm)
+    assert isinstance(webcam, HttpWebcam)
+    assert webcam.url == tm.url
+
+    # One published feed: the GNPC logo plus the conditions badge
+    assert len(webcam.overlays) == 1
+    composite = webcam.overlays[0]
+    assert isinstance(composite, CompositeOverlay)
+    assert [type(o) for o in composite.overlays] == [Logo, AirQuality]
+    assert composite.get_overlayed_img("tm")[1] == "tm.jpg"
+    # PurpleAir "Two Medicine", 0.1 mi from the camera
+    assert composite.overlays[1].sensor_index == 192041
+
+
+def test_ftp_cameras_are_not_http_cameras():
+    config = load_config("webcams.yaml")
+    by_name = {w.name: w for w in config.webcams}
+
+    assert not isinstance(create_webcam_from_config(by_name["mg"]), HttpWebcam)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {},  # neither
+        {"file_name_on_server": "tm.jpg", "url": "https://example.org/tm.jpg"},  # both
+    ],
+)
+def test_a_webcam_needs_exactly_one_source(source):
+    with pytest.raises(ValueError):
+        WebcamConfig(name="tm", logo_placements=[], **source)
 
 
 def test_unknown_overlay_type_is_rejected():
