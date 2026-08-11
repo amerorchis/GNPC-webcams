@@ -131,6 +131,111 @@ webcams:
           # and the badge will show temperature again.
           show_temperature: false
 
+  # West-side cameras, all republished from the NPS webcam page with their
+  # permission, same origin as tm and stmary. Every one burns its own caption
+  # and timestamp into the top edge, so none stamps a date, and NPS hosts the
+  # originals, so none needs an `_nps` variant.
+  #
+  # They come in three frame sizes and both overlays are sized proportionally
+  # in each, so every feed carries the same-looking furniture once the site
+  # displays them at a common width. The logo is 31.9% of the frame width with
+  # its bottom edge flush: 1920x1080 uses the standard [0, 944] / [612, 137],
+  # 1280x720 uses [0, 630] / [408, 91], 1600x1200 uses [0, 1087] / [510, 114].
+  # The badge is measured in pixels of a 1080p frame, so the other two sizes
+  # set `scale` to their width over 1920 (0.67 and 0.83).
+  #
+  # All eight share PurpleAir 111211 ("MT05 - West Glacier", 0.9 mi from Apgar
+  # Village). The per-sensor cache means the eight of them cost one API call
+  # per run, not eight.
+
+  - name: apgar_mtn
+    # Slower refresh than the rest — its frame can be hours old while the
+    # others are within a minute. That is the camera, not the pipeline.
+    url: https://www.nps.gov/webcams-glac/ApgarLookout-01.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+
+  - name: apgar_village
+    url: https://www.nps.gov/webcams-glac/ApgarVillage.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+
+  - name: lake_mcdonald
+    url: https://www.nps.gov/webcams-glac/LakeMcDonald1.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+
+  # NPS re-aims this PTZ periodically, so don't assume the framing is fixed.
+  - name: lake_mcdonald2
+    url: https://www.nps.gov/webcams-glac/lakemcdonaldptz.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 630]
+          size: [408, 91]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          scale: 0.67  # 1280x720 frame
+
+  - name: apgar_visitor_center
+    url: https://www.nps.gov/webcams-glac/ApgarVisitorCenter.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 1087]
+          size: [510, 114]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          scale: 0.83  # 1600x1200 frame
+
+  - name: middle_fork
+    url: https://www.nps.gov/webcams-glac/MiddleForkBridge.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 630]
+          size: [408, 91]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          scale: 0.67  # 1280x720 frame
+
+  - name: headquarters
+    url: https://www.nps.gov/webcams-glac/Headquarters.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 1087]
+          size: [510, 114]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          scale: 0.83  # 1600x1200 frame
+
+  - name: west_entrance
+    url: https://www.nps.gov/webcams-glac/WestEntrance.jpg
+    logo_placements:
+      - - type: logo
+          place: [0, 1087]
+          size: [510, 114]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          scale: 0.83  # 1600x1200 frame
+
 allsky_videos:
   - name: allsky
     file_name_on_server: allsky.mp4

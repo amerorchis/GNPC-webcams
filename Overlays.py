@@ -455,6 +455,12 @@ class AirQuality(Overlay):
         padding=(16, 12),
         gap=11,
         corner_radius=12,
+        # Every measurement above is in pixels of a 1920x1080 frame. On a
+        # smaller frame the badge would take up proportionally more of the
+        # picture, so cameras with a different frame size set this to the ratio
+        # of their width to 1920 and the whole badge, margin included, comes out
+        # the same fraction of the image.
+        scale=1.0,
         cache_seconds=600,
         max_reading_age=3600,
         timeout=10,
@@ -488,6 +494,7 @@ class AirQuality(Overlay):
         self.padding = tuple(padding)
         self.gap = gap
         self.corner_radius = corner_radius
+        self.scale = scale
         self.cache_seconds = cache_seconds
         self.max_reading_age = max_reading_age
         self.timeout = timeout
@@ -902,7 +909,16 @@ class AirQuality(Overlay):
                 tracking,
             )
 
-        return tile.resize((side // scale, side // scale), Image.LANCZOS)
+        return tile.resize(self._final_size(side, side, scale), Image.LANCZOS)
+
+    def _final_size(self, width, height, supersample):
+        """Size to come down to from the supersampled canvas.
+
+        Folds `scale` into the same LANCZOS step that removes the supersampling,
+        so a scaled-down badge is resampled once rather than twice.
+        """
+        divisor = supersample / self.scale
+        return (max(1, int(width // divisor)), max(1, int(height // divisor)))
 
     def _render_widget(
         self, value_text, color, category_text=None, temperature_text=None
@@ -939,21 +955,19 @@ class AirQuality(Overlay):
         )
         widget.paste(content, (pad_x, pad_y), content)
 
-        return widget.resize((width // scale, height // scale), Image.LANCZOS)
+        return widget.resize(self._final_size(width, height, scale), Image.LANCZOS)
 
     def _anchored_place(self, image_size, widget_size):
         """Where to paste the badge, given the configured corner."""
         vertical, _, horizontal = self.anchor.partition("-")
+        margin_x = int(round(self.margin[0] * self.scale))
+        margin_y = int(round(self.margin[1] * self.scale))
         x = (
-            self.margin[0]
+            margin_x
             if horizontal == "left"
-            else image_size[0] - widget_size[0] - self.margin[0]
+            else image_size[0] - widget_size[0] - margin_x
         )
-        y = (
-            self.margin[1]
-            if vertical == "top"
-            else image_size[1] - widget_size[1] - self.margin[1]
-        )
+        y = margin_y if vertical == "top" else image_size[1] - widget_size[1] - margin_y
         return (x, y)
 
     def add_overlay(self, image, mod_time_str=""):

@@ -1,6 +1,6 @@
 # GNPC Webcams Operation
 
-Automated webcam image and video processing system for the Glacier National Park Conservancy. Downloads webcam images from glacier.org FTP (and, for Two Medicine and St. Mary, from the NPS webcam page), applies GNPC logos with custom positioning, adds professional timestamps, and uploads processed images to an HTML server for public viewing.
+Automated webcam image and video processing system for the Glacier National Park Conservancy. Downloads webcam images from glacier.org FTP (and, for Two Medicine, St. Mary and the eight west-side cameras, from the NPS webcam page), applies GNPC logos with custom positioning, adds professional timestamps, and uploads processed images to an HTML server for public viewing.
 
 ## Architecture
 
@@ -45,7 +45,7 @@ A webcam draws its frame from exactly one source — the loader rejects an entry
 | `file_name_on_server` | a file on the glacier.org FTP server, timestamped from its `MDTM` reply |
 | `url` | an HTTP(S) URL, timestamped from the response's `Last-Modified` header |
 
-`tm` (Two Medicine) and `stmary` (St. Mary, looking up the valley from the visitor center) are the URL-sourced cameras. Neither feeds into the glacier.org FTP server, so both are fetched from the NPS webcam page with NPS's permission and republished with GNPC branding. NPS burns its own caption and timestamp into the top edge of those frames, so both leave `cover_date` off rather than stamping a second date. A URL-sourced camera is otherwise configured, overlaid and uploaded exactly like an FTP one.
+Ten cameras are URL-sourced: `tm` (Two Medicine), `stmary` (St. Mary, looking up the valley from the visitor center), and the eight west-side cameras. None of them feeds into the glacier.org FTP server, so all are fetched from the NPS webcam page with NPS's permission and republished with GNPC branding. NPS burns its own caption and timestamp into the top edge of those frames, so all leave `cover_date` off rather than stamping a second date. A URL-sourced camera is otherwise configured, overlaid and uploaded exactly like an FTP one.
 
 ```yaml
 - name: tm
@@ -55,7 +55,12 @@ A webcam draws its frame from exactly one source — the loader rejects an entry
   url: https://www.nps.gov/webcams-glac/StMaryPTZ.jpg
 ```
 
-Each publishes a single image. NPS hosts the originals, so an `_nps` variant of either would have no consumer. Note that `stmary` and `smv` are different cameras pointed at the same valley from opposite ends — `smv` looks down it from Logan Pass.
+Each publishes a single image. NPS hosts the originals, so an `_nps` variant of any of them would have no consumer. Note that `stmary` and `smv` are different cameras pointed at the same valley from opposite ends — `smv` looks down it from Logan Pass.
+
+The eight west-side cameras — `apgar_mtn`, `apgar_village`, `lake_mcdonald`, `lake_mcdonald2`, `apgar_visitor_center`, `middle_fork`, `headquarters` and `west_entrance` — cover Apgar, Lake McDonald, West Glacier and park headquarters. Two things separate them from the rest:
+
+- **Three frame sizes.** They arrive at 1920×1080, 1280×720 and 1600×1200, and the standard `place: [0, 944]` / `size: [612, 137]` logo placement assumes 1080p. Both overlays are sized proportionally instead, so the feeds look consistent once the site displays them at a common width: the logo keeps its 31.9%-of-frame-width and flush bottom edge (`[0, 630]` / `[408, 91]` at 720p, `[0, 1087]` / `[510, 114]` at 1600×1200), and the badge takes a `scale` of the frame width over 1920.
+- **`apgar_mtn` refreshes slowly.** Its frame can be hours old while the other seven are within a minute. That is the camera, not the pipeline, so don't go looking for a fault in the download path.
 
 ### Overlay Types
 
@@ -86,7 +91,7 @@ document.querySelectorAll('img.WebcamPreview__CoverImage').forEach(i => {
 
 ### Conditions Badge (Air Quality + Temperature)
 
-Six feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
+Fourteen feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
 
 | feed | sensor | note |
 |---|---|---|
@@ -94,6 +99,7 @@ Six feeds carry a conditions badge in the bottom-right corner: temperature above
 | `lpp`, `hlt`, `smv` | 192039 "Logan Pass" | the three Logan Pass cameras share one sensor at the visitor center; GNPC feeds only |
 | `tm` | 192041 "Two Medicine" | 0.1 mi from the camera |
 | `stmary` | 83937 "St. Mary - Visitor Center" | AQI only — see below |
+| the eight west-side feeds | 111211 "MT05 - West Glacier" | 0.9 mi from Apgar Village; one sensor covers all eight |
 
 ```yaml
 - type: air_quality
@@ -104,7 +110,7 @@ The `dark_sky` allsky feed deliberately has no badge. A fisheye of the sky is th
 
 The St. Mary sensor reports PM2.5 but no temperature and no humidity — that module is dead or absent — so its badge collapses to the AQI-only pill and the EPA correction falls back to its RH 50 default. It carries `show_temperature: false`, which stops paying 2 points a call for a field that always comes back null. That is the one setting to remove if the module is ever repaired; until then the badge would look identical either way, so nothing but the bill changes.
 
-It sits bottom-right on purpose. On `mg` the lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. The same corner works on `tm` and `stmary` — treetops and foreground grass — while their top-right is where the mountains sit. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
+It sits bottom-right on purpose. On `mg` the lake surface is the only large region of the frame that carries no information, so the badge hides nothing there and balances the Conservancy logo across the bottom edge; the top-right corner covered the ridgeline. The same corner works on `tm` and `stmary` — treetops and foreground grass — while their top-right is where the mountains sit. It holds across the west side too: water, lawn or pavement in the bottom-right of every one of those eight, and the sky and ridgelines people are actually looking at up top. `anchor` takes any of `bottom-right` (default), `bottom-left`, `top-right`, `top-left`.
 
 #### Layout collapse
 
@@ -133,7 +139,9 @@ The correction moves in both directions: it lowers the number in clean air and r
 
 #### Other options
 
-`metric: pm25` (with `label: PM2.5`) shows the concentration instead of the AQI, `show_category: false` drops the wording and shrinks the badge to one line, `place: [x, y]` overrides the auto top-right corner, and `cache_seconds` / `max_reading_age` control how often the API is queried and how stale a sensor may be before the badge is dropped. Every failure mode — missing `PURPLE_KEY`, a failed request, a sensor that has gone quiet — publishes the image without the badge rather than a wrong number.
+`metric: pm25` (with `label: PM2.5`) shows the concentration instead of the AQI, `show_category: false` drops the wording and shrinks the badge to one line, `place: [x, y]` overrides the auto top-right corner, and `cache_seconds` / `max_reading_age` control how often the API is queried and how stale a sensor may be before the badge is dropped.
+
+Every measurement in the badge is in pixels of a 1920×1080 frame, so on a smaller frame it would take up proportionally more of the picture. `scale` fixes that: set it to the camera's frame width over 1920 and the whole badge, margin included, comes out the same fraction of the image — the 1280×720 and 1600×1200 west-side feeds use `0.67` and `0.83`. The badge is drawn at 4× and downsampled regardless, and `scale` folds into that same step, so a scaled badge is resampled once rather than twice and its text stays as sharp as at full size. Every failure mode — missing `PURPLE_KEY`, a failed request, a sensor that has gone quiet — publishes the image without the badge rather than a wrong number.
 
 Readings are cached for 10 minutes in the system temp directory (`gnpc-purpleair-<sensor_index>.json`), matching the averaging window, so the once-a-minute cron cadence doesn't re-query the API for data that hasn't changed. The cache is disposable; deleting it just forces a fresh fetch.
 
@@ -154,7 +162,7 @@ Querying the sensors one at a time is the cheap way round, despite appearances. 
 
 Three other values arrive **free** inside the `stats` block that comes with `pm2.5_10minute`, so they must not be requested as fields: `stats.pm2.5` (the current ATM reading, rounded — the ratio's denominator, making `pm2.5_atm` redundant), and `stats.time_stamp` (identical to `last_seen`, used for the staleness check). Adding either back costs 2 points a call for nothing.
 
-Each sensor is queried and cached separately, so cost scales with sensors, not feeds: at the 10-minute cache cadence the three badges cost 22 points a cycle — 8 each for Many Glacier and Two Medicine, 6 for St. Mary — or ~3,170 points/day, roughly $0.95/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
+Each sensor is queried and cached separately, so cost scales with sensors, not feeds — this is why eight west-side cameras on one sensor cost no more than one of them would. At the 10-minute cache cadence the five sensors behind the fourteen badges cost 38 points a cycle — 8 each for Many Glacier, Logan Pass, Two Medicine and West Glacier, 6 for St. Mary — or ~5,470 points/day, roughly $1.64/month at $1 per 100,000 points. Setting `conversion: none` would drop the query to one field and 3 points, but that trades away the correction — not worth it. `GET /v1/organization` reports the remaining balance and is free to poll.
 
 ## Environment Setup
 

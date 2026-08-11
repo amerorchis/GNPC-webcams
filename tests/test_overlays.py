@@ -274,6 +274,25 @@ def test_air_quality_widget_grows_when_the_category_is_shown(monkeypatch):
     assert with_category[1] > without_category[1]
 
 
+@needs_fonts
+def test_air_quality_scale_shrinks_the_badge_and_its_margin(monkeypatch):
+    """Cameras with a smaller frame scale the badge to match it."""
+
+    def badge(**kwargs):
+        overlay = stub_readings(monkeypatch, AirQuality(sensor_index=1, **kwargs))
+        overlay.add_overlay(make_image_buffer(), "")
+        return overlay.size, overlay.place
+
+    (full_width, full_height), _ = badge()
+    (half_width, half_height), half_place = badge(scale=0.5)
+
+    assert half_width == pytest.approx(full_width / 2, abs=2)
+    assert half_height == pytest.approx(full_height / 2, abs=2)
+    # The margin scales too, or the badge would sit twice as far off the corner
+    # relative to the frame as it does at full size.
+    assert half_place == (1200 - half_width - 10, 1100 - half_height - 10)
+
+
 def capture_render(monkeypatch, overlay):
     """Record the arguments the overlay would draw, without drawing them."""
     rendered = []

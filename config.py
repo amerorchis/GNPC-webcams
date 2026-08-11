@@ -90,6 +90,9 @@ class AirQualityConfig:
     padding: Tuple[int, int] = (16, 12)
     gap: int = 11
     corner_radius: int = 12
+    # Ratio of this camera's frame width to 1920, so the badge stays the same
+    # fraction of the picture on a smaller frame.
+    scale: float = 1.0
     cache_seconds: int = 600
     max_reading_age: int = 3600
     timeout: int = 10
