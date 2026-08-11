@@ -44,11 +44,11 @@ def test_single_and_grouped_placements_parsed():
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
-    # lpp uses flat placements
-    assert all(isinstance(p, LogoConfig) for p in by_name["lpp"].logo_placements)
+    # dark_sky uses flat placements
+    assert all(isinstance(p, LogoConfig) for p in by_name["dark_sky"].logo_placements)
 
-    # smv uses grouped placements (list of lists)
-    assert all(isinstance(p, list) for p in by_name["smv"].logo_placements)
+    # lpp uses grouped placements (list of lists)
+    assert all(isinstance(p, list) for p in by_name["lpp"].logo_placements)
 
 
 def test_create_webcam_from_config():
@@ -58,16 +58,18 @@ def test_create_webcam_from_config():
     webcam = create_webcam_from_config(by_name["lpp"])
     assert isinstance(webcam, Webcam)
     assert webcam.file_name_on_server == "lpp.jpg"
-    assert all(isinstance(o, Logo) for o in webcam.overlays)
+    assert all(isinstance(o, (Logo, CompositeOverlay)) for o in webcam.overlays)
 
 
 def test_single_item_groups_unwrap_to_plain_overlays():
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}
 
-    # smv's groups each contain one logo, so they should not become composites
-    webcam = create_webcam_from_config(by_name["smv"])
-    assert all(not isinstance(o, CompositeOverlay) for o in webcam.overlays)
+    # lpp's NPS group holds one logo, so it stays a plain overlay; its GNPC
+    # group pairs a logo with the conditions badge and becomes a composite.
+    nps, gnpc = create_webcam_from_config(by_name["lpp"]).overlays
+    assert isinstance(nps, Logo) and not isinstance(nps, CompositeOverlay)
+    assert isinstance(gnpc, CompositeOverlay)
 
 
 def test_air_quality_config_defaults_match_the_overlay():

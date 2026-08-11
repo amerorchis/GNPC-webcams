@@ -86,11 +86,12 @@ document.querySelectorAll('img.WebcamPreview__CoverImage').forEach(i => {
 
 ### Conditions Badge (Air Quality + Temperature)
 
-Three feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
+Six feeds carry a conditions badge in the bottom-right corner: temperature above a hairline, then a severity dot colored by US EPA AQI category, the AQI from a [PurpleAir](https://map.purpleair.com/) sensor, and the category wording. Each reads the sensor nearest its own camera, so the number is local rather than borrowed:
 
 | feed | sensor | note |
 |---|---|---|
 | `mg` | 111457 "Many Glacier Ranger Station" | GNPC feed only; the NPS feed of the same camera deliberately has no badge |
+| `lpp`, `hlt`, `smv` | 192039 "Logan Pass" | the three Logan Pass cameras share one sensor at the visitor center; GNPC feeds only |
 | `tm` | 192041 "Two Medicine" | 0.1 mi from the camera |
 | `stmary` | 83937 "St. Mary - Visitor Center" | AQI only — see below |
 

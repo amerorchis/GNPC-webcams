@@ -27,15 +27,19 @@ webcams:
   - name: lpp
     file_name_on_server: lpp.jpg
     logo_placements:
-      - type: logo
-        place: [185, 944]
-        size: [612, 137]
-        img: overlays/logo-shaded.png
-        subname: nps
-      - type: logo
-        place: [0, 944]
-        size: [612, 137]
-        img: overlays/logo-shaded.png
+      # NPS feed: logo only, no conditions badge.
+      - - type: logo
+          place: [185, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+          subname: nps
+      # GNPC feed: logo plus the Logan Pass conditions badge.
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 192039  # PurpleAir "Logan Pass"
 
   - name: smv
     file_name_on_server: smv.jpg
@@ -56,19 +60,25 @@ webcams:
           size: [612, 137]
           img: overlays/logo-shaded.png
           cover_date: false
+        - type: air_quality
+          sensor_index: 192039  # PurpleAir "Logan Pass"
 
   - name: hlt
     file_name_on_server: hlt.jpg
     logo_placements:
-      - type: logo
-        place: [185, 944]
-        size: [612, 137]
-        img: overlays/logo-shaded.png
-        subname: nps
-      - type: logo
-        place: [0, 944]
-        size: [612, 137]
-        img: overlays/logo-shaded.png
+      # NPS feed: logo only, no conditions badge.
+      - - type: logo
+          place: [185, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+          subname: nps
+      # GNPC feed: logo plus the Logan Pass conditions badge.
+      - - type: logo
+          place: [0, 944]
+          size: [612, 137]
+          img: overlays/logo-shaded.png
+        - type: air_quality
+          sensor_index: 192039  # PurpleAir "Logan Pass"
 
   - name: mg
     file_name_on_server: mg.jpg
