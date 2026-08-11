@@ -447,7 +447,7 @@ class AirQuality(Overlay):
         category_font_size=20,
         category_tracking=1.2,
         line_gap=3,
-        divider_color=(255, 255, 255, 85),
+        divider_color=(255, 255, 255, 160),
         bg_color=(0, 0, 0, 175),
         text_color=(255, 255, 255),
         dot_radius=15,
@@ -872,7 +872,9 @@ class AirQuality(Overlay):
             rule_x = (side - rule_width) / 2
             rule_y = y - step / 2
             draw.rectangle(
-                (rule_x, rule_y, rule_x + rule_width, rule_y + max(2, scale // 2)),
+                # A full pixel of the finished badge — half of one lands on a
+                # dark plate faint enough to read as a rendering artifact.
+                (rule_x, rule_y, rule_x + rule_width, rule_y + max(1, scale - 1)),
                 fill=self.divider_color,
             )
 

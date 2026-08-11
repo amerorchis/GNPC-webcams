@@ -82,7 +82,7 @@ class AirQualityConfig:
     category_font_size: int = 20
     category_tracking: float = 1.2
     line_gap: int = 3
-    divider_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 85)
+    divider_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 160)
     bg_color: Tuple[int, int, int, int] = (0, 0, 0, 175)
     text_color: Tuple[int, int, int] = (255, 255, 255)
     dot_radius: int = 15
