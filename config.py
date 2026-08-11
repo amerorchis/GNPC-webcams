@@ -79,11 +79,11 @@ class AirQualityConfig:
     label: str = "AQI"
     label_font_size: int = 21
     show_category: bool = True
-    category_font_size: int = 16
-    category_tracking: float = 1.4
+    category_font_size: int = 20
+    category_tracking: float = 1.2
     line_gap: int = 3
     divider_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 85)
-    bg_color: Tuple[int, int, int, int] = (0, 0, 0, 140)
+    bg_color: Tuple[int, int, int, int] = (0, 0, 0, 175)
     text_color: Tuple[int, int, int] = (255, 255, 255)
     dot_radius: int = 15
     dot_outline_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 90)

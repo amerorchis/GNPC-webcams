@@ -440,11 +440,15 @@ class AirQuality(Overlay):
         label="AQI",
         label_font_size=21,
         show_category=True,
-        category_font_size=16,
-        category_tracking=1.4,
+        # The category is the first thing to go when the frame is scaled down to
+        # a phone, so it is set larger and tracked tighter than the label above
+        # it, and the plate is opaque enough to hold its own against a sunlit
+        # roof or snowfield behind it.
+        category_font_size=20,
+        category_tracking=1.2,
         line_gap=3,
         divider_color=(255, 255, 255, 85),
-        bg_color=(0, 0, 0, 140),
+        bg_color=(0, 0, 0, 175),
         text_color=(255, 255, 255),
         dot_radius=15,
         dot_outline_color=(255, 255, 255, 90),
