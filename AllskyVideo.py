@@ -8,12 +8,19 @@ import logging
 import os
 from datetime import datetime
 from ftplib import error_perm
+from time import sleep
 
 import ffmpeg
 from dotenv import load_dotenv
 
 from paths import resolve_path
-from Webcam import Webcam, close_ftp, connect_ftp
+from Webcam import (
+    RETRYABLE_FTP_ERRORS,
+    Webcam,
+    close_ftp,
+    connect_ftp,
+    retry_delay_for,
+)
 
 load_dotenv(resolve_path("environment.env"))
 
@@ -108,12 +115,38 @@ class AllskyVideo(Webcam):
             # If we can't connect or check, assume not processed to be safe
             return False
 
-    def get(self):
+    def get(self, max_retries=3, retry_delay=2):
         """
         Download overnight timelapse video from FTP server.
 
-        Checks if the video file exists on the server, downloads it to a buffer,
-        saves it to disk, and sets the modification time.
+        Retries around the same transient network faults the still-image
+        download does: this opens its own connection with the video's own
+        credentials rather than going through Webcam's shared pool, so it needs
+        its own retry loop to survive a dropped socket or a DNS blip.
+        """
+        for attempt in range(max_retries):
+            try:
+                self._get_attempt()
+                return
+            except RETRYABLE_FTP_ERRORS as e:
+                logger.warning(
+                    f"{self.name}: video download failed (attempt {attempt + 1}): {e}"
+                )
+                self.file_buffer = io.BytesIO()  # Discard any partial read
+                if attempt < max_retries - 1:
+                    delay = retry_delay_for(retry_delay, attempt, e)
+                    logger.info(f"{self.name}: retrying download in {delay:.1f}s...")
+                    sleep(delay)
+                else:
+                    logger.error(
+                        f"{self.name}: video download failed after {max_retries} tries"
+                    )
+                    raise
+
+    def _get_attempt(self):
+        """
+        One download attempt: check the file exists on the server, pull it into
+        the buffer, save it to disk and record its modification time.
         Sets self.available to True if video is found and downloaded successfully.
         """
         # Connect to the FTP server

@@ -1,7 +1,10 @@
 """Regression tests for AllskyVideo state handling (no network/FTP)."""
 
 import io
+import socket
 from ftplib import error_perm
+
+import pytest
 
 import AllskyVideo
 from AllskyVideo import AllskyVideo as AllskyVideoClass
@@ -43,6 +46,68 @@ def test_get_does_not_crash_when_file_vanishes_after_nlst(monkeypatch):
     vid = make_video()
     vid.get()  # Must not raise the 550 error_perm
 
+    assert vid.available is False
+
+
+class FlakyConnectFTP:
+    """FTP stub that serves a video, after connect_ftp fails a few times."""
+
+    def __init__(self, files):
+        self.files = files
+
+    def nlst(self):
+        return self.files
+
+    def retrbinary(self, cmd, callback):
+        callback(b"mp4-bytes")
+
+    def sendcmd(self, cmd):
+        return "213 20240101120000"
+
+    def quit(self):
+        pass
+
+
+def test_get_retries_a_dns_failure(monkeypatch, tmp_path):
+    """A DNS blip at connect time must not fail the whole video for the day.
+
+    The still cameras ride these out because their connect failures surface
+    inside _download_image's retry loop; the video opens its own connection, so
+    without a loop of its own one bad lookup killed it outright.
+    """
+    attempts = []
+
+    def flaky_connect(*args, **kwargs):
+        attempts.append(args)
+        if len(attempts) < 3:
+            raise socket.gaierror(-3, "Temporary failure in name resolution")
+        return FlakyConnectFTP(["allsky.mp4"])
+
+    monkeypatch.setattr(AllskyVideo, "connect_ftp", flaky_connect)
+
+    vid = make_video()
+    vid.raw_video_path = str(tmp_path / "allsky-raw.mp4")
+    vid.get(retry_delay=0)  # Must not raise gaierror
+
+    assert len(attempts) == 3  # Failed twice, then succeeded
+    assert vid.available is True
+
+
+def test_get_gives_up_after_max_retries(monkeypatch):
+    """A network fault that never clears still surfaces, rather than going quiet."""
+    attempts = []
+
+    def always_failing_connect(*args, **kwargs):
+        attempts.append(args)
+        raise socket.gaierror(-3, "Temporary failure in name resolution")
+
+    monkeypatch.setattr(AllskyVideo, "connect_ftp", always_failing_connect)
+
+    vid = make_video()
+    with pytest.raises(socket.gaierror):
+        vid.get(retry_delay=0)
+
+    assert len(attempts) == 3
     assert vid.available is False
 
 

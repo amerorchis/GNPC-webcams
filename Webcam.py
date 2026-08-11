@@ -53,6 +53,16 @@ def _is_connection_limit_error(error):
     return "too many connections" in str(error).lower()
 
 
+# Network faults worth reconnecting and retrying for, rather than failing the
+# camera. OSError covers the socket failures (broken pipe, reset, refused, and
+# DNS via socket.gaierror); error_temp covers transient 4xx replies such as a
+# 425 when the server can't open a passive data socket. EOFError has to be named
+# separately: it descends from Exception, not OSError, and it is what ftplib
+# raises when the server hangs up mid-reply — the usual way a pooled control
+# connection dies between uses.
+RETRYABLE_FTP_ERRORS = (OSError, EOFError, error_temp)
+
+
 def retry_delay_for(base_delay, attempt, error):
     """How long to wait before the next FTP retry.
 
@@ -82,10 +92,13 @@ def connect_ftp(server, user, password):
             ftps.prot_p()  # Encrypt the data channel too
             _ftps_supported = True
             return ftps
-        except (error_temp, socket.gaierror, TimeoutError):
-            # A busy server (421), a DNS failure or a timeout says nothing about
-            # TLS support. Retrying in plain FTP would fail the same way while
-            # burning a second connection slot, so surface the error instead.
+        except (error_temp, socket.gaierror, TimeoutError, EOFError):
+            # A busy server (421), a DNS failure, a timeout or a hangup says
+            # nothing about TLS support. Retrying in plain FTP would fail the
+            # same way while burning a second connection slot, so surface the
+            # error instead. A hangup must not latch _ftps_supported to False
+            # either: that would send the rest of the run's credentials in the
+            # clear over one transient drop.
             close_ftp(ftps)
             raise
         except Exception as e:
@@ -179,16 +192,8 @@ class Webcam:
                         f"{self.name} wasn't found in the folder."
                     ) from e
 
-            except (
-                BrokenPipeError,
-                socket.error,
-                ConnectionResetError,
-                OSError,
-                error_temp,
-            ) as e:
-                # error_temp covers transient 4xx replies (e.g. a 425 when the
-                # server can't open a passive data socket) — retryable, unlike
-                # the 5xx error_perm handled above.
+            except RETRYABLE_FTP_ERRORS as e:
+                # Retryable, unlike the 5xx error_perm handled above.
                 logger.warning(
                     f"  {self.name}: Download failed (attempt {attempt + 1}): {e}"
                 )
@@ -280,13 +285,7 @@ class Webcam:
 
                         self.upload += [f"https://glacier.org/webcam/{file_name}"]
                         return  # Success - exit retry loop
-                    except (
-                        BrokenPipeError,
-                        socket.error,
-                        ConnectionResetError,
-                        OSError,
-                        error_temp,
-                    ) as e:
+                    except RETRYABLE_FTP_ERRORS as e:
                         logger.warning(
                             f"  {self.name}: Upload failed for {file_name} "
                             f"(attempt {attempt + 1}): {e}"

@@ -1,5 +1,6 @@
 """Regression tests for Webcam FTP retry handling (no network)."""
 
+import io
 from ftplib import error_perm, error_temp
 
 import pytest
@@ -200,6 +201,121 @@ def test_ftps_failure_closes_socket_and_is_only_probed_once(monkeypatch):
 
     assert len(probes) == 1  # FTPS support is remembered, not re-probed
     assert len(closed) == 1  # and the failed probe released its connection
+
+
+class HangingUpFTP:
+    """FTP stub that hangs up on the first upload, the way a dropped session does.
+
+    ftplib turns a control connection closed mid-reply into EOFError, so this is
+    what a pooled connection the server has given up on looks like from here.
+    """
+
+    def __init__(self, counter, fail_times):
+        self.counter = counter
+        self.fail_times = fail_times
+        self.stored = []
+
+    def storbinary(self, cmd, fp):
+        if self.counter[0] < self.fail_times:
+            self.counter[0] += 1
+            raise EOFError
+        self.stored.append(cmd)
+
+    def rename(self, src, dst):
+        pass
+
+    def quit(self):
+        pass
+
+
+class SingleOverlay:
+    """Stands in for a Logo/overlay that already has its rendered image."""
+
+    def get_overlayed_img(self, name):
+        return io.BytesIO(b"jpeg-bytes"), f"{name}.jpg"
+
+
+def test_upload_retries_when_the_server_hangs_up(monkeypatch):
+    """EOFError is not an OSError, so it needs naming to reach the retry path.
+
+    A dropped control connection is the ordinary way a pooled session dies
+    between uses; reconnecting is exactly what the retry loop is for.
+    """
+    WebcamClass._upload_ftp = None
+    counter = [0]
+    monkeypatch.setattr(
+        Webcam, "connect_ftp", lambda *a, **k: HangingUpFTP(counter, fail_times=1)
+    )
+
+    cam = WebcamClass(name="lpp", file_name_on_server="lpp.jpg")
+    cam.overlays = [SingleOverlay()]
+    cam.upload_image(retry_delay=0)  # Must not raise EOFError
+
+    assert counter[0] == 1  # Hung up once, then succeeded on a fresh connection
+    assert cam.upload == ["https://glacier.org/webcam/lpp.jpg"]
+
+    WebcamClass._upload_ftp = None
+
+
+def test_download_retries_when_the_server_hangs_up(monkeypatch):
+    """The same dropped-session EOFError on the download pool."""
+
+    class HangingUpDownloadFTP:
+        def __init__(self, counter, fail_times):
+            self.counter = counter
+            self.fail_times = fail_times
+
+        def retrbinary(self, cmd, callback):
+            if self.counter[0] < self.fail_times:
+                self.counter[0] += 1
+                raise EOFError
+            callback(b"jpeg-bytes")
+
+        def sendcmd(self, cmd):
+            return "213 20240101120000"
+
+        def quit(self):
+            pass
+
+    WebcamClass._download_ftp = None
+    counter = [0]
+    monkeypatch.setattr(
+        Webcam,
+        "connect_ftp",
+        lambda *a, **k: HangingUpDownloadFTP(counter, fail_times=1),
+    )
+
+    cam = WebcamClass(name="lpp", file_name_on_server="lpp.jpg")
+    cam._download_image(retry_delay=0)  # Must not raise EOFError
+
+    assert cam.file_buffer.getvalue() == b"jpeg-bytes"
+    assert counter[0] == 1
+
+    WebcamClass._download_ftp = None
+
+
+def test_a_hangup_does_not_downgrade_the_run_to_plain_ftp(monkeypatch):
+    """A dropped socket is not a verdict on TLS support.
+
+    Latching _ftps_supported to False would send every later login in this run's
+    credentials in the clear over one transient hangup.
+    """
+
+    class HangingUpFTPS:
+        def __init__(self, server, timeout=None):
+            raise EOFError
+
+    def unexpected_plain_ftp(*args, **kwargs):
+        raise AssertionError("plain FTP must not be attempted after a hangup")
+
+    monkeypatch.setattr(Webcam, "_ftps_supported", None)
+    monkeypatch.setattr(Webcam, "FTP_TLS", HangingUpFTPS)
+    monkeypatch.setattr(Webcam, "FTP", unexpected_plain_ftp)
+
+    with pytest.raises(EOFError):
+        Webcam.connect_ftp("host", "user", "pwd")
+
+    assert Webcam._ftps_supported is None  # Still unknown, not ruled out
 
 
 def test_connection_limit_gets_a_longer_backoff():
