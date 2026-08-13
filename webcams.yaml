@@ -145,8 +145,10 @@ webcams:
   # set `scale` to their width over 1920 (0.67 and 0.83).
   #
   # All eight share PurpleAir 111211 ("MT05 - West Glacier", 0.9 mi from Apgar
-  # Village). The per-sensor cache means the eight of them cost one API call
-  # per run, not eight.
+  # Village), falling back to 190835 ("Lake McDonald - Apgar", at the foot of
+  # the lake) when it goes offline — which it does for days at a time. The
+  # per-sensor cache means the eight of them cost one API call per run, not
+  # eight.
 
   - name: apgar_mtn
     # Slower refresh than the rest — its frame can be hours old while the
@@ -159,6 +161,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
 
   - name: apgar_village
     url: https://www.nps.gov/webcams-glac/ApgarVillage.jpg
@@ -169,6 +172,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
 
   - name: lake_mcdonald
     url: https://www.nps.gov/webcams-glac/LakeMcDonald1.jpg
@@ -179,6 +183,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
 
   # NPS re-aims this PTZ periodically, so don't assume the framing is fixed.
   - name: lake_mcdonald2
@@ -190,6 +195,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
           scale: 0.67  # 1280x720 frame
 
   - name: apgar_visitor_center
@@ -201,6 +207,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
           scale: 0.83  # 1600x1200 frame
 
   - name: middle_fork
@@ -212,6 +219,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
           scale: 0.67  # 1280x720 frame
 
   - name: headquarters
@@ -223,6 +231,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
           scale: 0.83  # 1600x1200 frame
 
   - name: west_entrance
@@ -234,6 +243,7 @@ webcams:
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 111211  # PurpleAir "MT05 - West Glacier"
+          fallback_sensors: [190835]  # PurpleAir "Lake McDonald - Apgar"
           scale: 0.83  # 1600x1200 frame
 
 allsky_videos:

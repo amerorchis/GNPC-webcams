@@ -186,6 +186,33 @@ def test_st_mary_badge_does_not_buy_the_dead_temperature_field():
     assert "temperature" not in overlay._billed_fields()
 
 
+def test_the_west_side_cameras_all_carry_the_same_backup_sensor():
+    """111211 goes offline for days; the eight feeds have to survive together."""
+    config = load_config("webcams.yaml")
+    by_name = {w.name: w for w in config.webcams}
+    west_side = [
+        "apgar_mtn",
+        "apgar_village",
+        "lake_mcdonald",
+        "lake_mcdonald2",
+        "apgar_visitor_center",
+        "middle_fork",
+        "headquarters",
+        "west_entrance",
+    ]
+
+    for name in west_side:
+        badges = [
+            o
+            for group in by_name[name].logo_placements
+            for o in group
+            if isinstance(o, AirQualityConfig)
+        ]
+        assert len(badges) == 1, name
+        assert badges[0].sensor_index == 111211, name
+        assert list(badges[0].fallback_sensors) == [190835], name
+
+
 def test_air_quality_only_on_the_non_nps_feed():
     config = load_config("webcams.yaml")
     by_name = {w.name: w for w in config.webcams}

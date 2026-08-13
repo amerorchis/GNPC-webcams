@@ -1,6 +1,7 @@
 """Unit tests for overlay composition using in-memory images (no network/FTP)."""
 
 import io
+import json
 import os
 import time
 
@@ -544,6 +545,81 @@ def test_fetch_reading_survives_a_failed_request(monkeypatch, purple_air):
     monkeypatch.setattr(Overlays.requests, "get", fake_get)
 
     assert purple_air.fetch_reading() is None
+
+
+def test_fetch_reading_falls_back_to_a_backup_sensor(monkeypatch, purple_air):
+    stale = int(time.time()) - 2 * 3600
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        if url.endswith("/sensors/1"):
+            return FakeResponse(sensor_payload(last_seen=stale))
+        return FakeResponse(sensor_payload(pm25=7.5))
+
+    monkeypatch.setattr(Overlays.requests, "get", fake_get)
+    purple_air.fallback_sensors = (2,)
+
+    assert purple_air.fetch_reading()["pm25"] == 7.5
+    assert [url.rsplit("/", 1)[-1] for url in calls] == ["1", "2"]
+
+
+def test_a_working_primary_sensor_never_reaches_the_backup(monkeypatch, purple_air):
+    calls = []
+    monkeypatch.setattr(
+        Overlays.requests,
+        "get",
+        lambda url, **kw: calls.append(url) or FakeResponse(sensor_payload(pm25=7.5)),
+    )
+    purple_air.fallback_sensors = (2,)
+
+    purple_air.fetch_reading()
+    assert len(calls) == 1
+
+
+def test_an_offline_sensor_is_not_re_bought_every_run(monkeypatch, purple_air):
+    """Eight cameras a minute would otherwise each pay for the same dead sensor."""
+    stale = int(time.time()) - 2 * 3600
+    calls = []
+    monkeypatch.setattr(
+        Overlays.requests,
+        "get",
+        lambda url, **kw: (
+            calls.append(url) or FakeResponse(sensor_payload(last_seen=stale))
+        ),
+    )
+
+    assert purple_air.fetch_reading() is None
+    assert AirQuality(sensor_index=1).fetch_reading() is None
+    assert len(calls) == 1
+
+
+def test_a_cached_miss_expires_sooner_than_a_cached_reading(monkeypatch, purple_air):
+    stale = int(time.time()) - 2 * 3600
+    calls = []
+    monkeypatch.setattr(
+        Overlays.requests,
+        "get",
+        lambda url, **kw: (
+            calls.append(url) or FakeResponse(sensor_payload(last_seen=stale))
+        ),
+    )
+
+    purple_air.fetch_reading()
+
+    # Age the cached miss past its own life while leaving it well inside the
+    # life a real reading would have had.
+    age = purple_air.miss_cache_seconds + 1
+    assert age < purple_air.cache_seconds
+    cache_path = purple_air._cache_path(1)
+    with open(cache_path) as f:
+        cached = json.load(f)
+    cached["fetched_at"] -= age
+    with open(cache_path, "w") as f:
+        json.dump(cached, f)
+
+    purple_air.fetch_reading()
+    assert len(calls) == 2
 
 
 def test_fetch_reading_without_an_api_key(monkeypatch, tmp_path):

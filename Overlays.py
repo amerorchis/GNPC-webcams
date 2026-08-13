@@ -422,6 +422,9 @@ class AirQuality(Overlay):
     def __init__(
         self,
         sensor_index,
+        # Sensors to fall back on, nearest first, when the one above has
+        # stopped reporting.
+        fallback_sensors=(),
         place=None,
         size=None,
         subname=None,
@@ -462,12 +465,17 @@ class AirQuality(Overlay):
         # the same fraction of the image.
         scale=1.0,
         cache_seconds=600,
+        # A sensor that answered with nothing is left alone for this long. Kept
+        # well under cache_seconds so a sensor coming back online is picked up
+        # within a few cron runs.
+        miss_cache_seconds=300,
         max_reading_age=3600,
         timeout=10,
     ):
         super().__init__(place or (0, 0), size or (0, 0), subname)
         self.place_auto = place is None
         self.sensor_index = sensor_index
+        self.fallback_sensors = tuple(fallback_sensors)
         self.metric = metric
         self.conversion = conversion
         self.api_key_env = api_key_env
@@ -496,6 +504,7 @@ class AirQuality(Overlay):
         self.corner_radius = corner_radius
         self.scale = scale
         self.cache_seconds = cache_seconds
+        self.miss_cache_seconds = miss_cache_seconds
         self.max_reading_age = max_reading_age
         self.timeout = timeout
 
@@ -513,37 +522,48 @@ class AirQuality(Overlay):
             fields.append("temperature")
         return fields
 
-    @property
-    def _cache_path(self):
+    def _cache_path(self, sensor_index):
         return os.path.join(
-            tempfile.gettempdir(), f"gnpc-purpleair-{self.sensor_index}.json"
+            tempfile.gettempdir(), f"gnpc-purpleair-{sensor_index}.json"
         )
 
-    def _read_cache(self):
-        """The cached reading if it is still fresh, otherwise None."""
+    def _read_cache(self, sensor_index):
+        """The cached entry for a sensor if it is still fresh, otherwise None.
+
+        A fetch that came back empty is cached as well, under its own shorter
+        life: eight cameras can share one sensor and the whole set runs every
+        minute, so an offline sensor that was never cached would be bought and
+        rejected hundreds of times an hour.
+        """
         if self.cache_seconds <= 0:
             return None
         try:
-            with open(self._cache_path, "r") as f:
+            with open(self._cache_path(sensor_index), "r") as f:
                 cached = json.load(f)
         except (OSError, ValueError):
             return None
 
-        if time.time() - cached.get("fetched_at", 0) > self.cache_seconds:
+        life = (
+            self.cache_seconds
+            if cached.get("reading") is not None
+            else self.miss_cache_seconds
+        )
+        if life <= 0 or time.time() - cached.get("fetched_at", 0) > life:
             return None
-        return cached.get("reading")
+        return cached
 
-    def _write_cache(self, reading):
+    def _write_cache(self, sensor_index, reading):
         if self.cache_seconds <= 0:
             return
         payload = {"reading": reading, "fetched_at": time.time()}
+        cache_path = self._cache_path(sensor_index)
         # Written via a uniquely named temp file so overlapping cron runs can't
         # read a half-written cache or clobber each other's rename.
-        temp_path = f"{self._cache_path}.{os.getpid()}.tmp"
+        temp_path = f"{cache_path}.{os.getpid()}.tmp"
         try:
             with open(temp_path, "w") as f:
                 json.dump(payload, f)
-            os.replace(temp_path, self._cache_path)
+            os.replace(temp_path, cache_path)
         except OSError as e:
             logger.warning(f"Could not cache PurpleAir reading: {e}")
             try:
@@ -552,10 +572,15 @@ class AirQuality(Overlay):
                 pass
 
     def fetch_reading(self):
-        """The sensor's latest numbers, or None if they are unavailable.
+        """The latest numbers from the nearest sensor that has them, or None.
 
         Returns the 10-minute PM2.5 average, the humidity, and the ratio between
         the sensor's two PM2.5 channels — see `pm25` for why that ratio matters.
+
+        A sensor can drop off the network for days at a time, so a camera may
+        name backups. They are tried in order and the first that answers wins.
+        The badge never says which sensor it came from, so a backup has to be
+        close enough that its reading is still true of the view.
         """
         api_key = os.getenv(self.api_key_env)
         if not api_key:
@@ -565,66 +590,90 @@ class AirQuality(Overlay):
             return None
 
         with _purple_air_cache_lock:
-            cached = self._read_cache()
-            if cached is not None:
-                logger.debug(f"Using cached PurpleAir reading: {cached}")
-                return cached
+            fetched = False
+            for sensor_index in (self.sensor_index, *self.fallback_sensors):
+                reading, from_cache = self._sensor_reading(sensor_index, api_key)
+                fetched = fetched or not from_cache
+                if reading is not None:
+                    # Announced only when something was actually bought this
+                    # time: eight cameras twice a minute would otherwise repeat
+                    # the same line off the cache until the sensor came back.
+                    if sensor_index != self.sensor_index and fetched:
+                        logger.info(
+                            f"PurpleAir sensor {self.sensor_index} is unavailable; "
+                            f"using backup sensor {sensor_index}"
+                        )
+                    return reading
+            return None
 
-            try:
-                response = requests.get(
-                    PURPLE_AIR_SENSOR_URL.format(sensor_index=self.sensor_index),
-                    headers={"X-API-Key": api_key},
-                    # Billed per field, so ask only for what can't be derived:
-                    # the "stats" block arrives with the 10-minute average and
-                    # carries the current ATM reading and its timestamp for
-                    # free, making pm2.5_atm and last_seen redundant purchases.
-                    params={"fields": ",".join(self._billed_fields())},
-                    timeout=self.timeout,
-                )
-                response.raise_for_status()
-                sensor = response.json().get("sensor", {})
-            except (requests.RequestException, ValueError) as e:
-                logger.warning(f"Error fetching PurpleAir sensor data: {e}")
-                return None
+    def _sensor_reading(self, sensor_index, api_key):
+        """One sensor's numbers and whether they came from the cache.
 
-            # The 10-minute average lives under "stats"; older API versions
-            # promoted it to the sensor itself.
-            stats = sensor.get("stats", {})
-            pm25 = stats.get("pm2.5_10minute")
-            if pm25 is None:
-                pm25 = sensor.get("pm2.5_10minute")
-            if pm25 is None:
-                logger.warning(
-                    f"PurpleAir sensor {self.sensor_index} returned no 10-minute value"
-                )
-                return None
+        The reading is None when the sensor has nothing to give.
+        """
+        cached = self._read_cache(sensor_index)
+        if cached is not None:
+            logger.debug(f"Using cached PurpleAir reading: {cached['reading']}")
+            return cached["reading"], True
 
-            # stats.time_stamp is when the sensor last reported, matching the
-            # last_seen field exactly but without being billed for it.
-            last_seen = stats.get("time_stamp") or sensor.get("last_seen")
-            if (
-                self.max_reading_age
-                and last_seen
-                and time.time() - last_seen > self.max_reading_age
-            ):
-                logger.warning(
-                    f"PurpleAir sensor {self.sensor_index} last reported "
-                    f"{(time.time() - last_seen) / 60:.0f} minutes ago; "
-                    "skipping air quality overlay"
-                )
-                return None
+        try:
+            response = requests.get(
+                PURPLE_AIR_SENSOR_URL.format(sensor_index=sensor_index),
+                headers={"X-API-Key": api_key},
+                # Billed per field, so ask only for what can't be derived:
+                # the "stats" block arrives with the 10-minute average and
+                # carries the current ATM reading and its timestamp for
+                # free, making pm2.5_atm and last_seen redundant purchases.
+                params={"fields": ",".join(self._billed_fields())},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            sensor = response.json().get("sensor", {})
+        except (requests.RequestException, ValueError) as e:
+            logger.warning(f"Error fetching PurpleAir sensor data: {e}")
+            self._write_cache(sensor_index, None)
+            return None, False
 
-            reading = {
-                "pm25": pm25,
-                "humidity": sensor.get("humidity_a"),
-                "temperature": sensor.get("temperature"),
-                # stats.pm2.5 is the current ATM reading rounded to a whole
-                # number — free with the 10-minute average, and precise enough
-                # for a ratio that gets clamped anyway.
-                "cf1_ratio": _cf1_ratio(stats.get("pm2.5"), sensor.get("pm2.5_cf_1")),
-            }
-            self._write_cache(reading)
-            return reading
+        # The 10-minute average lives under "stats"; older API versions
+        # promoted it to the sensor itself.
+        stats = sensor.get("stats", {})
+        pm25 = stats.get("pm2.5_10minute")
+        if pm25 is None:
+            pm25 = sensor.get("pm2.5_10minute")
+        if pm25 is None:
+            logger.warning(
+                f"PurpleAir sensor {sensor_index} returned no 10-minute value"
+            )
+            self._write_cache(sensor_index, None)
+            return None, False
+
+        # stats.time_stamp is when the sensor last reported, matching the
+        # last_seen field exactly but without being billed for it.
+        last_seen = stats.get("time_stamp") or sensor.get("last_seen")
+        if (
+            self.max_reading_age
+            and last_seen
+            and time.time() - last_seen > self.max_reading_age
+        ):
+            logger.warning(
+                f"PurpleAir sensor {sensor_index} last reported "
+                f"{(time.time() - last_seen) / 60:.0f} minutes ago; "
+                "skipping it"
+            )
+            self._write_cache(sensor_index, None)
+            return None, False
+
+        reading = {
+            "pm25": pm25,
+            "humidity": sensor.get("humidity_a"),
+            "temperature": sensor.get("temperature"),
+            # stats.pm2.5 is the current ATM reading rounded to a whole
+            # number — free with the 10-minute average, and precise enough
+            # for a ratio that gets clamped anyway.
+            "cf1_ratio": _cf1_ratio(stats.get("pm2.5"), sensor.get("pm2.5_cf_1")),
+        }
+        self._write_cache(sensor_index, reading)
+        return reading, False
 
     def pm25(self):
         """The PM2.5 concentration to publish, or None if it is unavailable.

@@ -61,6 +61,8 @@ class AirQualityConfig:
     # this dataclass, so a stale value here silently overrides the class.
     # test_air_quality_config_defaults_match_the_overlay guards the pairing.
     sensor_index: int
+    # Sensors to fall back on, nearest first, when the one above is offline.
+    fallback_sensors: Tuple[int, ...] = ()
     place: Optional[Tuple[int, int]] = None
     size: Optional[Tuple[int, int]] = None
     subname: Optional[str] = None
@@ -94,6 +96,7 @@ class AirQualityConfig:
     # fraction of the picture on a smaller frame.
     scale: float = 1.0
     cache_seconds: int = 600
+    miss_cache_seconds: int = 300
     max_reading_age: int = 3600
     timeout: int = 10
 

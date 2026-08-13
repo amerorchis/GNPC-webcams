@@ -99,12 +99,34 @@ Fourteen feeds carry a conditions badge in the bottom-right corner: temperature 
 | `lpp`, `hlt`, `smv` | 192039 "Logan Pass" | the three Logan Pass cameras share one sensor at the visitor center; GNPC feeds only |
 | `tm` | 192041 "Two Medicine" | 0.1 mi from the camera |
 | `stmary` | 83937 "St. Mary - Visitor Center" | AQI only — see below |
-| the eight west-side feeds | 111211 "MT05 - West Glacier" | 0.9 mi from Apgar Village; one sensor covers all eight |
+| the eight west-side feeds | 111211 "MT05 - West Glacier" | 0.9 mi from Apgar Village; one sensor covers all eight, backed by 190835 |
 
 ```yaml
 - type: air_quality
   sensor_index: 111457
 ```
+
+#### Backup sensors
+
+These are hobbyist sensors on residential wifi, and they go quiet for days at a time — 111211 has taken the whole west side's badge down more than once. A feed can name backups to try when its own sensor stops reporting:
+
+```yaml
+- type: air_quality
+  sensor_index: 111211                # PurpleAir "MT05 - West Glacier"
+  fallback_sensors: [190835]          # PurpleAir "Lake McDonald - Apgar"
+```
+
+They are tried in order and the first that answers wins. The badge never says which sensor it came from, so only list one that is close enough for its reading to still be true of the view — a sensor across the divide would publish a plausible, wrong number rather than no number.
+
+To find candidates near a camera, query the map API for a bounding box around it and keep the outdoor units (`location_type` 0) that have reported recently:
+
+```bash
+curl -sG https://api.purpleair.com/v1/sensors -H "X-API-Key: $PURPLE_KEY" \
+  --data-urlencode 'fields=name,latitude,longitude,last_seen,location_type' \
+  -d nwlat=48.86 -d nwlng=-114.53 -d selat=48.16 -d selng=-113.46
+```
+
+A sensor that answers with nothing — offline, no 10-minute average, a failed request — is remembered as a miss for `miss_cache_seconds` (300 by default, against 600 for a real reading). Without that, eight cameras running every minute would each buy the same dead sensor on every run before falling through to the backup.
 
 The `dark_sky` allsky feed deliberately has no badge. A fisheye of the sky is the one view where a conditions readout adds nothing anybody came for.
 
