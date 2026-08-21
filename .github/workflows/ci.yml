@@ -37,7 +37,8 @@ jobs:
         run: uvx ruff@0.12.9 format --check .
 
       # --locked fails the run if uv.lock has drifted from pyproject.toml.
-      # Font-dependent tests skip themselves here: fonts are untracked.
+      # The rendering fonts are vendored in fonts/, so the overlay drawing
+      # tests run here rather than skipping.
       - name: Test
         run: uv run --locked pytest
 

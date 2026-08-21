@@ -9,12 +9,14 @@ import os
 from datetime import datetime
 from ftplib import error_perm
 from time import sleep
+from zoneinfo import ZoneInfo
 
 import ffmpeg
 from dotenv import load_dotenv
 
 from paths import resolve_path
 from Webcam import (
+    MOUNTAIN_TIME,
     RETRYABLE_FTP_ERRORS,
     Webcam,
     close_ftp,
@@ -79,10 +81,13 @@ class AllskyVideo(Webcam):
         else:
             logger.info(f"{self.name}: No video available, skipping logo overlay")
 
-    def check_if_processed_today(self):
+    def check_if_processed_today(self, now=None):
         """
         Check if video has already been processed today by verifying
         if the output file exists on the upload server.
+
+        "Today" is a Mountain Time day, which is when the overnight video
+        arrives and is watched; `now` is injectable for tests.
         """
         try:
             # Connect to the upload FTP server
@@ -99,8 +104,14 @@ class AllskyVideo(Webcam):
                     # Check if it was modified today by getting its modification time
                     try:
                         mod_time_str = ftp.voidcmd(f"MDTM {self.name}.mp4")[4:]
-                        mod_time = datetime.strptime(mod_time_str, "%Y%m%d%H%M%S")
-                        today = datetime.now().date()
+                        # MDTM replies are UTC; convert before comparing dates,
+                        # or every evening upload looks like tomorrow's.
+                        mod_time = (
+                            datetime.strptime(mod_time_str.strip(), "%Y%m%d%H%M%S")
+                            .replace(tzinfo=ZoneInfo("UTC"))
+                            .astimezone(MOUNTAIN_TIME)
+                        )
+                        today = (now or datetime.now(MOUNTAIN_TIME)).date()
 
                         self.processed_today = mod_time.date() == today
                     except Exception:

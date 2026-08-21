@@ -4,14 +4,13 @@ Automated webcam image and video processing system for the Glacier National Park
 
 ## Architecture
 
-The system consists of seven main classes:
+The system consists of six main classes:
 
 - **`Webcam`** - Main image processing class handling FTP download, logo application, timestamp overlay, and upload
 - **`HttpWebcam`** - A `Webcam` whose source frame is fetched from a URL instead of the FTP server; everything after the download is inherited unchanged
 - **`Logo`** - Encapsulates logo placement configuration with custom positioning and sizing  
-- **`Temperature`** - Fetches and overlays temperature data with customizable styling
 - **`AirQuality`** - Fetches a PurpleAir sensor reading and overlays an AQI badge
-- **`CompositeOverlay`** - Combines multiple overlays (logo + temperature) into single composite images
+- **`CompositeOverlay`** - Chains multiple overlays (logo + badge) on one decoded image so the output is encoded to JPEG once
 - **`AllskyVideo`** - Inherits from Webcam for overnight timelapse video processing using FFmpeg
 
 ## Configuration
@@ -24,7 +23,7 @@ webcams:
     file_name_on_server: lpp.jpg
     logo_placements:
       - type: logo
-        place: [140, 944]
+        place: [185, 944]
         size: [612, 137]
         img: overlays/logo-shaded.png
         subname: nps
@@ -55,7 +54,9 @@ Ten cameras are URL-sourced: `tm` (Two Medicine), `stmary` (St. Mary, looking up
   url: https://www.nps.gov/webcams-glac/StMaryPTZ.jpg
 ```
 
-Each publishes a single image. NPS hosts the originals, so an `_nps` variant of any of them would have no consumer. Note that `stmary` and `smv` are different cameras pointed at the same valley from opposite ends — `smv` looks down it from Logan Pass.
+Each publishes a single image. NPS hosts the originals, so an `_nps` variant of any of them would have no consumer.
+
+URL fetches are conditional. After a frame is uploaded, its `ETag` and `Last-Modified` are kept in the system temp dir (`gnpc-http-<name>.json`) and sent back as `If-None-Match` / `If-Modified-Since` on the next fetch; a `304 Not Modified` means glacier.org already shows that frame, so the camera skips its overlays and upload for the round. The record is written only after a successful upload, so a frame that never reached the server is fetched again rather than skipped, and it is ignored if the camera's URL has changed. A source that ignores the headers simply answers 200 every time and behaves as before. Note that `stmary` and `smv` are different cameras pointed at the same valley from opposite ends — `smv` looks down it from Logan Pass.
 
 The eight west-side cameras — `apgar_mtn`, `apgar_village`, `lake_mcdonald`, `lake_mcdonald2`, `apgar_visitor_center`, `middle_fork`, `headquarters` and `west_entrance` — cover Apgar, Lake McDonald, West Glacier and park headquarters. Two things separate them from the rest:
 
@@ -64,9 +65,11 @@ The eight west-side cameras — `apgar_mtn`, `apgar_village`, `lake_mcdonald`, `
 
 ### Overlay Types
 
-- **Single overlays**: Apply one `logo`, `temperature` or `air_quality` overlay
-- **Composite overlays**: Nest overlays in a list to combine them into one image (see `webcams-temperature.yaml` for a logo + temperature example)
-- **Auto-positioning**: Temperature and air quality overlays can auto-position to the top-right corner
+- **Single overlays**: Apply one `logo` or `air_quality` overlay
+- **Composite overlays**: Nest overlays in a list to combine them into one image, as every feed with a conditions badge does
+- **Auto-positioning**: The air quality badge positions itself from its `anchor` and `margin` when no `place` is given
+
+Overlays draw on a decoded image and hand it to the next overlay in the group; the result is encoded once, at `JPEG_QUALITY` (90) rather than Pillow's default 75, so a logo-plus-badge feed carries one light re-encode instead of two heavy ones.
 
 A placement list may not mix bare overlays with nested groups — if any placement is a group, wrap them all, as `mg` and `smv` do.
 
@@ -217,7 +220,7 @@ Errors are printed to stderr so cron emails them even with stdout discarded. The
 
 Only one run executes at a time. A run holds an exclusive `flock` on `webcams.lock` for its duration; if a slow run is still going when cron fires the next minute, that run logs a skip and exits without touching FTP. This keeps stacked runs from exhausting the server's per-IP connection limit (`421 Too many connections`). The lock is held by the process, so a killed or crashed run releases it automatically — a leftover `webcams.lock` file is normal and never needs to be deleted by hand.
 
-The system processes 7 webcam images and 1 overnight timelapse video using threading for parallel processing, with automatic retry logic for both FTP and HTTP downloads and comprehensive logging. FTP connections use FTPS when the server supports it, falling back to plain FTP. All file paths resolve relative to the repository directory, so the cron `cd` is optional.
+The system processes 15 webcam images and 1 overnight timelapse video using threading for parallel processing, with automatic retry logic for both FTP and HTTP downloads and comprehensive logging. FTP connections use FTPS when the server supports it, falling back to plain FTP. All file paths resolve relative to the repository directory, so the cron `cd` is optional.
 
 ## Testing
 
@@ -231,10 +234,10 @@ Unit tests in `tests/` cover config parsing, overlay composition and download re
 
 Pushing to `main` deploys to the production Pi; no manual SSH or `git pull` is needed. `.github/workflows/ci.yml` defines both halves:
 
-1. **Lint and test** runs on a GitHub-hosted runner for every push and pull request — `ruff check`, `ruff format --check`, and `pytest`. The ruff version is pinned to match `.pre-commit-config.yaml` so CI and the pre-commit hook agree. Font-dependent tests skip themselves, since fonts are untracked.
+1. **Lint and test** runs on a GitHub-hosted runner for every push and pull request — `ruff check`, `ruff format --check`, and `pytest`. The ruff version is pinned to match `.pre-commit-config.yaml` so CI and the pre-commit hook agree. The two rendering fonts are vendored, so the overlay drawing tests run in CI too.
 2. **Deploy to gnpic** runs `scripts/deploy.sh` on a self-hosted runner on the Pi, but only after the tests pass and only for a push to `main` (or a manual `workflow_dispatch`). Pull requests, including any from a fork of this public repo, cannot reach the Pi.
 
-`scripts/deploy.sh` takes the same `webcams.lock` that a run holds before it touches anything, so a deploy waits for the current run to finish instead of swapping files underneath it; the run that fires meanwhile simply skips its cycle. It fast-forwards rather than resetting, which both leaves untracked local state (`environment.env`, `.python-version`, `fonts/`, `images/`, logs) alone and stops loudly if the Pi has picked up local commits. Dependencies re-sync only when `pyproject.toml` or `uv.lock` changed, using the interpreter already in `.venv` — uv's managed ARM builds segfault on this Pi. Finally it imports `main`, which builds every camera from `webcams.yaml` without touching the network; if that fails the checkout is rolled back and the run goes red.
+`scripts/deploy.sh` takes the same `webcams.lock` that a run holds before it touches anything, so a deploy waits for the current run to finish instead of swapping files underneath it; the run that fires meanwhile simply skips its cycle. It fast-forwards rather than resetting, which both leaves untracked local state (`environment.env`, `.python-version`, `images/`, logs) alone and stops loudly if the Pi has picked up local commits. If a file that was untracked on the Pi becomes tracked (as the fonts did), the script removes the local copy when it is byte-identical to the incoming one and refuses the deploy when it is not. Dependencies re-sync only when `pyproject.toml` or `uv.lock` changed, using the interpreter already in `.venv` — uv's managed ARM builds segfault on this Pi. Finally it imports `main`, which builds every camera from `webcams.yaml` without touching the network; if that fails the checkout is rolled back and the run goes red.
 
 To deploy without a commit, use **Actions → CI → Run workflow** on `main`.
 
@@ -250,7 +253,7 @@ cd ~/actions-runner-gnpc-webcams && sudo ./svc.sh status   # or stop / start
 
 ```
 overlays/          # Logo images and graphics
-fonts/             # Font files for timestamp rendering
+fonts/             # OpenSans-Bold and SourceSansVariable-Bold (both OFL) for the overlays
 webcams.yaml       # All webcam and overlay configurations
 config.py          # Configuration dataclasses and YAML loading
 environment.env    # Credentials and settings (not in repo)

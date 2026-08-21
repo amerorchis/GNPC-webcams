@@ -11,7 +11,7 @@ import yaml
 
 from AllskyVideo import AllskyVideo
 from HttpWebcam import HttpWebcam
-from Overlays import AirQuality, Logo, Temperature
+from Overlays import AirQuality, Logo
 from paths import resolve_path
 from Webcam import Webcam
 
@@ -36,21 +36,6 @@ class LogoConfig:
     cover_date_text_position: Tuple[int, int] = (4, 3)
     cover_date_text_color: Tuple[int, int, int] = (255, 255, 255)
     cover_date_text_scale: float = 1.0
-
-
-@dataclass
-class TemperatureConfig:
-    """Configuration for a Temperature overlay."""
-
-    place: Optional[Tuple[int, int]] = None
-    size: Tuple[int, int] = (175, 44)
-    endpoint: str = "https://glacier.org/scripts/post_temp.cgi"
-    subname: Optional[str] = None
-    font_path: str = "fonts/SourceSansVariable-Bold.ttf"
-    font_size: int = 38
-    bg_color: Tuple[int, int, int, int] = (0, 0, 0, 64)
-    bg_size: Tuple[int, int] = (175, 44)
-    text_color: Tuple[int, int, int] = (255, 255, 255)
 
 
 @dataclass
@@ -101,7 +86,7 @@ class AirQualityConfig:
     timeout: int = 10
 
 
-OverlayConfig = Union[LogoConfig, TemperatureConfig, AirQualityConfig]
+OverlayConfig = Union[LogoConfig, AirQualityConfig]
 
 
 @dataclass
@@ -146,7 +131,6 @@ class AppConfig:
 
 OVERLAY_CONFIG_TYPES = {
     "logo": LogoConfig,
-    "temperature": TemperatureConfig,
     "air_quality": AirQualityConfig,
 }
 
@@ -219,11 +203,6 @@ def create_overlay_from_config(overlay_config: OverlayConfig):
 
     if isinstance(overlay_config, LogoConfig):
         return Logo(**asdict(overlay_config))
-    elif isinstance(overlay_config, TemperatureConfig):
-        kwargs = asdict(overlay_config)
-        kwargs["bg_color"] = tuple(kwargs["bg_color"])
-        kwargs["text_color"] = tuple(kwargs["text_color"])
-        return Temperature(**kwargs)
     elif isinstance(overlay_config, AirQualityConfig):
         return AirQuality(**asdict(overlay_config))
     else:

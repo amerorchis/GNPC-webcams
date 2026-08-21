@@ -45,6 +45,22 @@ fi
 # commits, stop and report it instead of silently discarding them. A
 # fast-forward also leaves untracked local state (.python-version,
 # environment.env, fonts/, images/, logs) completely alone.
+# A file that is untracked here but tracked as of $TARGET (the fonts were
+# installed by hand before they were vendored) makes the fast-forward refuse to
+# run. An identical local copy can simply go — the merge writes the same bytes
+# back; a copy that differs is a real conflict and stops the deploy.
+git ls-tree -r --name-only "$TARGET" | while IFS= read -r path; do
+    [ -f "$path" ] || continue
+    git cat-file -e "HEAD:$path" 2>/dev/null && continue   # already tracked
+    if [ "$(git hash-object "$path")" = "$(git rev-parse "$TARGET:$path")" ]; then
+        log "removing untracked $path; $TARGET tracks an identical copy"
+        rm -f "$path"
+    else
+        echo "untracked $path differs from the copy in $TARGET; resolve by hand" >&2
+        exit 1
+    fi
+done
+
 git merge --ff-only "$TARGET"
 
 # uv must not reach for one of its managed ARM Python builds — those segfault on

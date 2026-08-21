@@ -2,7 +2,6 @@
 
 import io
 import json
-import os
 import time
 
 import pytest
@@ -14,14 +13,12 @@ from Overlays import (
     AirQuality,
     CompositeOverlay,
     Logo,
-    Temperature,
     _cf1_ratio,
     aqi_category,
     aqi_color,
     epa_correct_pm25,
     pm25_to_aqi,
 )
-from paths import resolve_path
 
 
 def make_image_buffer(size=(1200, 1100), color=(10, 60, 40)):
@@ -39,10 +36,6 @@ def test_logo_overlay_produces_image_of_same_size():
     assert result.size == (1200, 1100)
 
 
-@pytest.mark.skipif(
-    not os.path.exists(resolve_path("fonts/OpenSans-Bold.ttf")),
-    reason="fonts are not tracked in git; skip on checkouts without them",
-)
 def test_logo_overlay_with_cover_date():
     logo = Logo(
         place=(0, 944),
@@ -102,39 +95,74 @@ def test_composite_overlay_uses_first_subname():
     assert file_name == "smv_nps.jpg"
 
 
+class RecordingOverlay(Overlays.Overlay):
+    """Notes what it was handed and draws nothing."""
+
+    def __init__(self):
+        super().__init__(place=(0, 0), size=(0, 0))
+        self.inputs = []
+
+    def apply(self, image, mod_time_str=""):
+        self.inputs.append(image)
+        return image
+
+
+def test_composite_overlay_chains_decoded_images_and_encodes_once():
+    """The overlays in a group hand each other pixels, not JPEG bytes.
+
+    A re-encode between every overlay would compound the loss on every GNPC
+    feed, which all carry a logo and a badge.
+    """
+    first, second = RecordingOverlay(), RecordingOverlay()
+    composite = CompositeOverlay([first, second])
+
+    composite.add_overlay(make_image_buffer(), "")
+
+    assert all(isinstance(i, Image.Image) for i in first.inputs + second.inputs)
+    assert second.inputs[0] is first.inputs[0]  # Same canvas, no round-trip
+    assert first.overlayed.getvalue() == b""  # Only the composite encodes
+    assert Image.open(composite.overlayed).size == (1200, 1100)
+
+
+def test_overlays_encode_above_pillows_default_quality():
+    """Quality 75 softens a frame the camera has already compressed once."""
+    noisy = Image.effect_noise((400, 300), 64).convert("RGB")
+    source = io.BytesIO()
+    noisy.save(source, format="JPEG", quality=95)
+    source.seek(0)
+
+    baseline = io.BytesIO()
+    noisy.save(baseline, format="JPEG", quality=75)
+
+    logo = Logo(place=(0, 0), size=(1, 1))
+    logo.add_overlay(source, "")
+
+    assert Overlays.JPEG_QUALITY >= 90
+    assert len(logo.overlayed.getvalue()) > 1.3 * len(baseline.getvalue())
+
+
+def test_air_quality_fetches_the_sensor_once_per_frame(monkeypatch):
+    """Temperature and AQI come out of the same reading; buy it once."""
+    air_quality = AirQuality(sensor_index=1)
+    calls = []
+
+    def fetch_reading():
+        calls.append(1)
+        return {"pm25": 10.0, "humidity": 40, "temperature": 71, "cf1_ratio": 1.0}
+
+    monkeypatch.setattr(air_quality, "fetch_reading", fetch_reading)
+    air_quality.add_overlay(make_image_buffer(), "")
+
+    assert len(calls) == 1
+    assert air_quality.size != (0, 0)  # The badge was drawn with both values
+
+
 def test_get_overlayed_img_naming():
     assert Logo(place=(0, 0), size=(1, 1)).get_overlayed_img("mg")[1] == "mg.jpg"
     assert (
         Logo(place=(0, 0), size=(1, 1), subname="nps").get_overlayed_img("mg")[1]
         == "mg_nps.jpg"
     )
-
-
-def test_temperature_overlay_with_mocked_fetch(monkeypatch):
-    temperature = Temperature()
-    monkeypatch.setattr(temperature, "fetch_temperature", lambda: "72 °F")
-
-    temperature.add_overlay(make_image_buffer(), "")
-    result = Image.open(temperature.overlayed)
-    assert result.size == (1200, 1100)
-
-    # Auto-positioning puts the box at the top-right corner
-    assert temperature.place == (1200 - temperature.bg_size[0], 0)
-
-
-def test_temperature_overlay_without_data_passes_image_through(monkeypatch):
-    temperature = Temperature()
-    monkeypatch.setattr(temperature, "fetch_temperature", lambda: "")
-
-    temperature.add_overlay(make_image_buffer(), "")
-    result = Image.open(temperature.overlayed)
-    assert result.size == (1200, 1100)
-
-
-needs_fonts = pytest.mark.skipif(
-    not os.path.exists(resolve_path("fonts/SourceSansVariable-Bold.ttf")),
-    reason="fonts are not tracked in git; skip on checkouts without them",
-)
 
 
 @pytest.mark.parametrize(
@@ -221,12 +249,11 @@ def test_cf1_ratio_ignores_single_digit_readings():
 
 def stub_readings(monkeypatch, overlay, pm25=12.0, temperature=None):
     """Pin both measurements so no test touches the network."""
-    monkeypatch.setattr(overlay, "pm25", lambda: pm25)
-    monkeypatch.setattr(overlay, "temperature", lambda: temperature)
+    monkeypatch.setattr(overlay, "pm25", lambda reading: pm25)
+    monkeypatch.setattr(overlay, "temperature", lambda reading: temperature)
     return overlay
 
 
-@needs_fonts
 def test_air_quality_overlay_anchors_bottom_right_by_default(monkeypatch):
     air_quality = stub_readings(monkeypatch, AirQuality(sensor_index=1))
 
@@ -238,7 +265,6 @@ def test_air_quality_overlay_anchors_bottom_right_by_default(monkeypatch):
     assert air_quality.place == (1200 - width - 20, 1100 - height - 20)
 
 
-@needs_fonts
 @pytest.mark.parametrize(
     "anchor,expected",
     [
@@ -263,7 +289,6 @@ def test_air_quality_overlay_honours_every_anchor(monkeypatch, anchor, expected)
         assert y == 1100 - height - 20
 
 
-@needs_fonts
 def test_air_quality_widget_grows_when_the_category_is_shown(monkeypatch):
     def widget_size(**kwargs):
         overlay = stub_readings(monkeypatch, AirQuality(sensor_index=1, **kwargs))
@@ -275,7 +300,6 @@ def test_air_quality_widget_grows_when_the_category_is_shown(monkeypatch):
     assert with_category[1] > without_category[1]
 
 
-@needs_fonts
 def test_air_quality_scale_shrinks_the_badge_and_its_margin(monkeypatch):
     """Cameras with a smaller frame scale the badge to match it."""
 
@@ -353,7 +377,6 @@ def test_air_quality_overlay_without_data_passes_image_through(monkeypatch):
     assert air_quality.size == (0, 0)
 
 
-@needs_fonts
 def test_air_quality_badge_is_square_when_both_readings_are_present(monkeypatch):
     air_quality = stub_readings(
         monkeypatch, AirQuality(sensor_index=1), pm25=45.0, temperature=61.0
@@ -363,7 +386,6 @@ def test_air_quality_badge_is_square_when_both_readings_are_present(monkeypatch)
     assert width == height
 
 
-@needs_fonts
 def test_air_quality_badge_collapses_when_only_one_reading_survives(monkeypatch):
     """A square with an empty half would read as broken."""
     aqi_only = stub_readings(monkeypatch, AirQuality(sensor_index=1), pm25=45.0)
@@ -377,7 +399,6 @@ def test_air_quality_badge_collapses_when_only_one_reading_survives(monkeypatch)
     assert temp_only.size[0] > temp_only.size[1]
 
 
-@needs_fonts
 def test_air_quality_badge_omits_the_dot_when_only_temperature_survives(monkeypatch):
     """The dot encodes AQI severity, so it must not appear without an AQI."""
     temp_only = stub_readings(

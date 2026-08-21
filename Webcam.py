@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 load_dotenv(resolve_path("environment.env"))
 
+MOUNTAIN_TIME = ZoneInfo("America/Denver")
+
 
 # The server allows only a handful of simultaneous connections per IP, so every
 # socket this process opens has to be accounted for. Once a connect attempt tells
@@ -146,6 +148,10 @@ class Webcam:
         self.mod_time = None
         self.mod_time_str = ""
         self.upload = []
+        # Set by a download that learns the source has not changed since the
+        # frame was last published; process() and upload_image() then do
+        # nothing, as there is nothing new to draw on or send.
+        self.source_unchanged = False
 
     def _download_image(self, max_retries=3, retry_delay=2):
         """Download image using shared FTP connection with retry logic."""
@@ -258,6 +264,8 @@ class Webcam:
     def upload_image(self, max_retries=3, retry_delay=2):
         """Upload processed images using shared FTP connection with retry logic."""
         self.upload = []
+        if self.source_unchanged:
+            return
         with self._upload_lock:
 
             def upload_file(overlayed, file_name):
@@ -315,7 +323,7 @@ class Webcam:
         Takes an aware UTC timestamp so any source can feed it — an FTP MDTM
         reply or an HTTP Last-Modified header.
         """
-        mod_time = mod_time_utc.astimezone(ZoneInfo("America/Denver"))
+        mod_time = mod_time_utc.astimezone(MOUNTAIN_TIME)
         self.mod_time = mod_time
         # lstrip("0") drops the leading zero of the hour portably
         # (strftime's %-I is glibc/macOS-only)
@@ -379,6 +387,9 @@ class Webcam:
 
                 # Download and process image
                 self._download_image()
+                if self.source_unchanged:
+                    logger.info(f"{self.name}: Source unchanged since last publish")
+                    return
                 if self.blackout:
                     self._apply_blackout()
                 self._apply_overlays()

@@ -2,7 +2,9 @@
 
 import io
 import socket
+from datetime import datetime
 from ftplib import error_perm
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -118,3 +120,42 @@ def test_upload_image_skips_when_logoed_is_not_a_path():
     assert isinstance(vid.logoed, io.BytesIO)
 
     vid.upload_image()  # Must return cleanly, not TypeError on open(BytesIO)
+
+
+class PublishedFTP:
+    """Upload-server stub that already holds today's video."""
+
+    def __init__(self, mdtm_utc):
+        self.mdtm_utc = mdtm_utc
+
+    def nlst(self):
+        return ["allsky.mp4"]
+
+    def voidcmd(self, cmd):
+        return f"213 {self.mdtm_utc}"
+
+    def quit(self):
+        pass
+
+
+def test_processed_today_compares_dates_in_mountain_time(monkeypatch):
+    """An evening upload is 'tomorrow' in UTC but still today on the Pi.
+
+    01:30 UTC on the 22nd is 7:30 pm MDT on the 21st; a run at 8 pm must see
+    the video as already done rather than go looking for it again.
+    """
+    monkeypatch.setattr(
+        AllskyVideo, "connect_ftp", lambda *a, **k: PublishedFTP("20260822013000")
+    )
+    now = datetime(2026, 8, 21, 20, 0, tzinfo=ZoneInfo("America/Denver"))
+
+    assert make_video().check_if_processed_today(now=now) is True
+
+
+def test_yesterdays_video_does_not_count_as_processed(monkeypatch):
+    monkeypatch.setattr(
+        AllskyVideo, "connect_ftp", lambda *a, **k: PublishedFTP("20260821013000")
+    )
+    now = datetime(2026, 8, 21, 20, 0, tzinfo=ZoneInfo("America/Denver"))
+
+    assert make_video().check_if_processed_today(now=now) is False

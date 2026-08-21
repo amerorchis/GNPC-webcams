@@ -1,0 +1,30 @@
+.venv
+images
+__pycache__
+environment.env
+.DS_Store
+OpenSans-Bold.ttf
+allsky-logo.mp4
+allsky.mp4
+._OpenSans-Bold.ttf
+._.DS_Store
+.claude
+Mannin-Regular.ttf
+SourceSansVariable.ttf
+test_images/
+tests/manual/
+*.ttf
+.python-version
+.vscode/settings.json
+debug-images/
+debug/
+
+# The two fonts the overlays render with are vendored so CI can exercise the
+# drawing code; both are under the SIL Open Font License (see fonts/*LICENSE*).
+# Everything else in fonts/ stays local.
+!fonts/OpenSans-Bold.ttf
+!fonts/SourceSansVariable-Bold.ttf
+
+# Runtime state written next to the code on the Pi
+webcams.lock
+webcams.log*
