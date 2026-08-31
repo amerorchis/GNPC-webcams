@@ -11,7 +11,7 @@ GNPC-webcams is an automated webcam image and video processing system for the Gl
 The system consists of six main classes:
 
 - **`Webcam`** - Main image processing class handling FTP download, logo application, timestamp overlay, and upload
-- **`HttpWebcam`** - `Webcam` subclass that fetches its frame from a URL and takes the timestamp from the `Last-Modified` header; only the download differs. The fetch is conditional: the validators of the last *uploaded* frame live in the temp dir and a 304 sets `source_unchanged`, which makes `process()`/`upload_image()` no-ops for the round
+- **`HttpWebcam`** - `Webcam` subclass that fetches its frame from a URL and takes the timestamp from the `Last-Modified` header; only the download differs. The fetch is conditional: the validators of the last *uploaded* frame live in the temp dir and a 304 sets `source_unchanged`, which makes `process()`/`upload_image()` no-ops for the round. A 200 whose body Pillow can't identify (nps.gov serves zero-byte files at times) is treated the same way, with its validators recorded so it isn't re-bought and reported every minute — one warning, not a traceback per run
 - **`Logo`** - Encapsulates logo placement configuration with custom positioning and sizing
 - **`AirQuality`** - Fetches a PurpleAir sensor's 10-minute PM2.5 average and temperature, applies the EPA's extended US-wide correction, and overlays a conditions badge (temperature over a severity dot + AQI + category wording). Collapses from a square to a single-value pill when only one measurement is available
 - **`CompositeOverlay`** - Applies multiple overlays in sequence on one decoded image to produce one output image

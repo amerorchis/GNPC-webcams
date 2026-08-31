@@ -1,13 +1,24 @@
 """Tests for the HTTP-sourced webcam (no network)."""
 
+import io
 import json
 
 import pytest
 import requests
+from PIL import Image
 
 import HttpWebcam as http_webcam_module
 from HttpWebcam import HttpWebcam
 from Webcam import Webcam
+
+
+def tiny_jpeg():
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), (0, 0, 0)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+JPEG = tiny_jpeg()
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +31,7 @@ def validators_in_tmp(monkeypatch, tmp_path):
 
 
 class FakeResponse:
-    def __init__(self, content=b"jpeg-bytes", headers=None, status_code=200):
+    def __init__(self, content=JPEG, headers=None, status_code=200):
         self.content = content
         self.headers = headers or {}
         self.status_code = status_code
@@ -59,7 +70,7 @@ def test_download_reads_body_and_timestamp(monkeypatch):
     cam = HttpWebcam(name="tm", url="https://example.org/TwoMedicine.jpg")
     cam._download_image()
 
-    assert cam.file_buffer.getvalue() == b"jpeg-bytes"
+    assert cam.file_buffer.getvalue() == JPEG
     # 19:17 UTC is 1:17 pm in Mountain Daylight Time
     assert cam.mod_time_str == "1:17 pm Aug. 10, 2026"
 
@@ -77,7 +88,7 @@ def test_download_retries_then_succeeds(monkeypatch):
     cam._download_image(retry_delay=0)
 
     assert len(calls) == 2
-    assert cam.file_buffer.getvalue() == b"jpeg-bytes"
+    assert cam.file_buffer.getvalue() == JPEG
 
 
 def test_missing_last_modified_leaves_a_blank_timestamp(monkeypatch):
@@ -89,7 +100,7 @@ def test_missing_last_modified_leaves_a_blank_timestamp(monkeypatch):
     cam = HttpWebcam(name="tm", url="https://example.org/TwoMedicine.jpg")
     cam._download_image()
 
-    assert cam.file_buffer.getvalue() == b"jpeg-bytes"
+    assert cam.file_buffer.getvalue() == JPEG
     assert cam.mod_time_str == ""
     assert cam.mod_time is None
 
@@ -218,4 +229,56 @@ def test_a_fresh_frame_resets_the_unchanged_flag(monkeypatch):
 
     cam._download_image()
     assert cam.source_unchanged is False
-    assert cam.file_buffer.getvalue() == b"jpeg-bytes"
+    assert cam.file_buffer.getvalue() == JPEG
+
+
+@pytest.mark.parametrize(
+    "body, content_type",
+    [
+        (b"", "image/jpeg"),  # nps.gov has published zero-byte frames
+        (b"<html>maintenance</html>", "text/html"),
+    ],
+)
+def test_a_body_that_is_not_an_image_is_skipped_not_raised(
+    monkeypatch, validators_in_tmp, caplog, body, content_type
+):
+    """The published frame stays up and the run does not report a failure."""
+    bad = FakeResponse(
+        content=body,
+        headers={**VALIDATED.headers, "Content-Type": content_type},
+    )
+    monkeypatch.setattr(http_webcam_module.requests, "get", fake_get(bad))
+    cam = HttpWebcam(name="tm", url=URL)
+
+    applied, uploaded = [], []
+    monkeypatch.setattr(cam, "_apply_overlays", lambda: applied.append(1))
+    monkeypatch.setattr(cam, "_process_overlay_files", lambda a: uploaded.append(1))
+    with caplog.at_level("WARNING"):
+        cam.process()
+    cam.upload_image()
+
+    assert cam.source_unchanged is True
+    assert applied == [] and uploaded == []
+    assert "not an image" in caplog.text
+
+
+def test_a_rejected_body_is_not_fetched_again_until_it_changes(monkeypatch):
+    """Its validators are recorded so the next fetch can answer 304."""
+    empty = FakeResponse(content=b"", headers=VALIDATED.headers)
+    sent = []
+    monkeypatch.setattr(
+        http_webcam_module.requests,
+        "get",
+        fake_get([empty, FakeResponse(status_code=304), VALIDATED], sent, True),
+    )
+    cam = HttpWebcam(name="tm", url=URL)
+
+    cam._download_image()
+    cam._download_image()
+    assert sent[1]["If-None-Match"] == '"abc123"'
+    assert cam.source_unchanged is True
+
+    # A replacement object carries a new ETag, so the source answers 200 again.
+    cam._download_image()
+    assert cam.source_unchanged is False
+    assert cam.file_buffer.getvalue() == JPEG

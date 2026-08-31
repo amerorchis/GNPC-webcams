@@ -12,6 +12,7 @@ from email.utils import parsedate_to_datetime
 from time import sleep
 
 import requests
+from PIL import Image, UnidentifiedImageError
 
 from Overlays import USER_AGENT
 from Webcam import Webcam, retry_delay_for
@@ -32,6 +33,11 @@ class HttpWebcam(Webcam):
     shows what glacier.org already has, so the run skips the overlay and upload
     for this camera. Some of these sources refresh every few minutes, one of
     them every few hours, and the pipeline polls twice a minute.
+
+    A 200 whose body is not an image (nps.gov has served a zero-byte file for
+    hours at a time) is not an error to report: the frame already on
+    glacier.org stays up, and the response's validators are recorded so the
+    bad object answers 304 until the source replaces it.
     """
 
     def __init__(self, name, url, logo_placements=None, blackout=False, timeout=20):
@@ -76,15 +82,43 @@ class HttpWebcam(Webcam):
                 self.source_unchanged = True
                 return
 
-            self.file_buffer = io.BytesIO(response.content)
-            self._set_mod_time_from_header(response.headers.get("Last-Modified"))
-            self._pending_validators = {
+            validators = {
                 "url": self.url,
                 "etag": response.headers.get("ETag"),
                 "last_modified": response.headers.get("Last-Modified"),
             }
+            frame = io.BytesIO(response.content)
+            if not self._is_image(frame):
+                logger.warning(
+                    f"  {self.name}: Source served {len(response.content)} bytes "
+                    f"of {response.headers.get('Content-Type')!r} that is not an "
+                    "image; keeping the published frame until the source changes"
+                )
+                self._write_validators(validators)
+                self.source_unchanged = True
+                return
+
+            self.file_buffer = frame
+            self._set_mod_time_from_header(response.headers.get("Last-Modified"))
+            self._pending_validators = validators
             logger.debug(f"  {self.name}: Download successful")
             return
+
+    @staticmethod
+    def _is_image(buffer):
+        """Whether Pillow recognises the buffer's header as an image.
+
+        Only the header is read; a frame truncated further in still goes on
+        to `process()`, whose retry handles that case.
+        """
+        try:
+            with Image.open(buffer):
+                pass
+        except UnidentifiedImageError:
+            return False
+        finally:
+            buffer.seek(0)
+        return True
 
     def upload_image(self, max_retries=3, retry_delay=2):
         """Upload as `Webcam` does, then remember which frame was published.
@@ -103,7 +137,7 @@ class HttpWebcam(Webcam):
         return os.path.join(tempfile.gettempdir(), f"gnpc-http-{self.name}.json")
 
     def _read_validators(self):
-        """The validators of the last published frame, or None.
+        """The validators of the last frame published or rejected, or None.
 
         Ignored if recorded against a different URL, so re-pointing a camera in
         the config can never make its first fetch look "not modified".
