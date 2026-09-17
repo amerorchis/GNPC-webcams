@@ -43,8 +43,6 @@ webcams:
 
   - name: smv
     file_name_on_server: smv.jpg
-    # Temporary: camera was bumped/aimed wrong. Set false to restore the live feed.
-    blackout: true
     logo_placements:
       # Grouped placements: add more overlays to a group to composite them
       # into a single output image (see webcams-temperature.yaml for an

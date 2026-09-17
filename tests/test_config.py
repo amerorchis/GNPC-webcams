@@ -33,11 +33,24 @@ def test_unused_section_is_not_loaded():
     assert "stuck" not in names
 
 
-def test_blackout_flag_parsed():
-    config = load_config("webcams.yaml")
+def test_blackout_flag_parsed(tmp_path):
+    cfg = tmp_path / "webcams.yaml"
+    cfg.write_text(
+        """
+webcams:
+  - name: dark
+    file_name_on_server: dark.jpg
+    blackout: true
+    logo_placements: []
+  - name: live
+    file_name_on_server: live.jpg
+    logo_placements: []
+"""
+    )
+    config = load_config(str(cfg))
     by_name = {w.name: w for w in config.webcams}
-    assert by_name["smv"].blackout is True
-    assert by_name["lpp"].blackout is False
+    assert by_name["dark"].blackout is True
+    assert by_name["live"].blackout is False
 
 
 def test_single_and_grouped_placements_parsed():
