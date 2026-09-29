@@ -101,15 +101,20 @@ webcams:
   # glacier.org FTP server (used with NPS's permission). NPS burns its own
   # title/timestamp bar into the top-left corner, so this feed doesn't stamp
   # its own date.
+  #
+  # The frame is 2880x1620, 1.5x the standard 1080p, so the logo and badge are
+  # scaled up by the same proportions the west-side feeds are scaled down by:
+  # logo 31.9% of the width with its bottom edge flush, badge at width/1920.
   - name: tm
     url: https://www.nps.gov/webcams-glac/TwoMedicine.jpg
     logo_placements:
       - - type: logo
-          place: [0, 944]
-          size: [612, 137]
+          place: [0, 1415]
+          size: [918, 206]
           img: overlays/logo-shaded.png
         - type: air_quality
           sensor_index: 192041  # PurpleAir "Two Medicine", 0.1 mi from the camera
+          scale: 1.5  # 2880x1620 frame
 
   # St. Mary, looking up the valley from the visitor center — also republished
   # from the NPS webcam page with their permission, and a different camera from
