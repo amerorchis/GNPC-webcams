@@ -17,12 +17,12 @@ jobs:
       # rather than inheriting whatever the runner image ships.
       UV_PYTHON: "3.11"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10
         with:
-          version: "0.8.10"
+          version: "0.12.23"
           enable-cache: true
 
       - name: Install Python 3.11
@@ -31,10 +31,10 @@ jobs:
       # Pinned to the ruff in .pre-commit-config.yaml so CI and the pre-commit
       # hook can never disagree about what counts as clean.
       - name: Lint
-        run: uvx ruff@0.12.9 check .
+        run: uvx ruff@0.16.10 check .
 
       - name: Check formatting
-        run: uvx ruff@0.12.9 format --check .
+        run: uvx ruff@0.16.10 format --check .
 
       # --locked fails the run if uv.lock has drifted from pyproject.toml.
       # The rendering fonts are vendored in fonts/, so the overlay drawing
@@ -58,7 +58,7 @@ jobs:
       group: deploy-gnpic
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Deploy
         run: ./scripts/deploy.sh
