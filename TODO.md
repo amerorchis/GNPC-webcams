@@ -1,27 +1,5 @@
 # TODO (future, not urgent)
 
-## Runner platform deadline — 2026-09-16
-
-GitHub drops support for Linux ARM32 self-hosted runners after 16 September 2026.
-`gnpic` runs a 32-bit (`armhf`) userland on a 64-bit kernel, so the deploy job in
-`.github/workflows/ci.yml` will stop working on that date. This also affects the
-existing runners for `email-testing` and `glacier_daily`.
-
-Options:
-
-- **Reinstall the Pi with 64-bit Raspberry Pi OS.** Keeps all three runners working
-  and is the only fix that preserves the current setup. Biggest disruption — pyenv,
-  `.venv`, `environment.env`, fonts, and every cron entry have to be rebuilt.
-- **Switch deploy to SSH over Tailscale.** Runs on a GitHub-hosted runner and SSHes
-  into the Pi, so no ARM runner is involved. `glacier_daily` already deploys this way
-  and the OAuth client exists; this repo would need its own `TS_OAUTH_CLIENT_ID`,
-  `TS_OAUTH_SECRET`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KEY`, `DEPLOY_PATH`
-  secrets. `scripts/deploy.sh` runs unchanged on the far side.
-- **Cron poll on the Pi.** Extend `~/Modules/update_repos.sh` to run more often and
-  call `scripts/deploy.sh`, gating on the GitHub API's check status for `origin/main`.
-  No secrets and no inbound access, at the cost of deploy latency and losing the
-  deploy log from the Actions UI.
-
 ## West-side cameras — glacier.org blocks still to add
 
 The eight west-side NPS cameras are published by this pipeline as of 2026-08-11

@@ -63,14 +63,6 @@ done
 
 git merge --ff-only "$TARGET"
 
-# uv must not reach for one of its managed ARM Python builds — those segfault on
-# this Pi. Pointing it at the interpreter already in .venv (pyenv 3.11) keeps it
-# on the one known to work.
-if [ -x .venv/bin/python ]; then
-    export UV_PYTHON="$DEPLOY_PATH/.venv/bin/python"
-fi
-export UV_PYTHON_DOWNLOADS=never
-
 sync_deps() {
     # --no-dev keeps test-only packages off the production box.
     "$UV" sync --no-dev

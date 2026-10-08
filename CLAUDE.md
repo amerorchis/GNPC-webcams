@@ -92,8 +92,6 @@ uv run pytest
 - `.github/workflows/ci.yml` runs ruff + pytest on a hosted runner, then `scripts/deploy.sh` on a self-hosted runner on the Pi. The deploy job requires a `push`/`workflow_dispatch` on `main`, which is what keeps fork pull requests off the Pi — the repo is public, so don't loosen that `if:` or add `pull_request_target`
 - The ruff pin in the workflow must track the one in `.pre-commit-config.yaml`, or CI and the hook will disagree
 - `scripts/deploy.sh` takes `webcams.lock` before touching the checkout, fast-forwards (never resets) so untracked Pi state survives, removes an untracked file only when the target commit tracks a byte-identical copy (refusing otherwise), syncs deps only when the lockfile moved, and rolls back if `import main` fails
-- uv on the Pi must not fetch a managed ARM Python — those segfault. The deploy pins `UV_PYTHON` to the existing `.venv` interpreter and sets `UV_PYTHON_DOWNLOADS=never`
-- GitHub drops Linux ARM32 self-hosted runners after 2026-09-16. This Pi is `armhf`, so the deploy job needs a 64-bit OS or an SSH-based deploy before then
 
 ## Architecture Patterns
 
