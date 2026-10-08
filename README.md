@@ -237,7 +237,7 @@ Pushing to `main` deploys to the production Pi; no manual SSH or `git pull` is n
 1. **Lint and test** runs on a GitHub-hosted runner for every push and pull request — `ruff check`, `ruff format --check`, and `pytest`. The ruff version is pinned to match `.pre-commit-config.yaml` so CI and the pre-commit hook agree. The two rendering fonts are vendored, so the overlay drawing tests run in CI too.
 2. **Deploy to gnpic** runs `scripts/deploy.sh` on a self-hosted runner on the Pi, but only after the tests pass and only for a push to `main` (or a manual `workflow_dispatch`). Pull requests, including any from a fork of this public repo, cannot reach the Pi.
 
-`scripts/deploy.sh` takes the same `webcams.lock` that a run holds before it touches anything, so a deploy waits for the current run to finish instead of swapping files underneath it; the run that fires meanwhile simply skips its cycle. It fast-forwards rather than resetting, which both leaves untracked local state (`environment.env`, `.python-version`, `images/`, logs) alone and stops loudly if the Pi has picked up local commits. If a file that was untracked on the Pi becomes tracked (as the fonts did), the script removes the local copy when it is byte-identical to the incoming one and refuses the deploy when it is not. Dependencies re-sync only when `pyproject.toml` or `uv.lock` changed, using the interpreter already in `.venv` — uv's managed ARM builds segfault on this Pi. Finally it imports `main`, which builds every camera from `webcams.yaml` without touching the network; if that fails the checkout is rolled back and the run goes red.
+`scripts/deploy.sh` takes the same `webcams.lock` that a run holds before it touches anything, so a deploy waits for the current run to finish instead of swapping files underneath it; the run that fires meanwhile simply skips its cycle. It fast-forwards rather than resetting, which both leaves untracked local state (`environment.env`, `.python-version`, `images/`, logs) alone and stops loudly if the Pi has picked up local commits. If a file that was untracked on the Pi becomes tracked (as the fonts did), the script removes the local copy when it is byte-identical to the incoming one and refuses the deploy when it is not. Dependencies re-sync only when `pyproject.toml` or `uv.lock` changed. Finally it imports `main`, which builds every camera from `webcams.yaml` without touching the network; if that fails the checkout is rolled back and the run goes red.
 
 To deploy without a commit, use **Actions → CI → Run workflow** on `main`.
 
@@ -246,8 +246,6 @@ The runner is a systemd service on the Pi, installed in `~/actions-runner-gnpc-w
 ```bash
 cd ~/actions-runner-gnpc-webcams && sudo ./svc.sh status   # or stop / start
 ```
-
-> **Note:** GitHub is dropping support for Linux ARM32 self-hosted runners after 16 September 2026. This Pi runs a 32-bit (`armhf`) userland, so the deploy job will stop working then and will need either a 64-bit OS on the Pi or a switch to an SSH-based deploy over Tailscale.
 
 ## File Structure
 
