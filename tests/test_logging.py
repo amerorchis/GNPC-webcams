@@ -36,6 +36,8 @@ def test_rotation_caps_log_size(monkeypatch, tmp_path):
     monkeypatch.setenv("LOG_FILE", str(log_file))
     monkeypatch.setenv("LOG_MAX_BYTES", "500")
     monkeypatch.setenv("LOG_BACKUP_COUNT", "2")
+    # environment.env may set a quieter level, and importing main loads it
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
 
     setup_logging()
     try:
