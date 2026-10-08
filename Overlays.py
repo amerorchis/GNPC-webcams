@@ -483,6 +483,18 @@ class AirQuality(Overlay):
                             f"using backup sensor {sensor_index}"
                         )
                     return reading
+            # Each sensor's own trouble is logged in _sensor_reading; this is
+            # the one line that says the badge is actually gone. Like the
+            # backup notice, it waits for a fresh purchase rather than
+            # repeating off every camera's cached miss.
+            if fetched:
+                sensors = ", ".join(
+                    str(s) for s in (self.sensor_index, *self.fallback_sensors)
+                )
+                logger.warning(
+                    f"No current PurpleAir reading from sensor(s) {sensors}; "
+                    "skipping air quality overlay"
+                )
             return None
 
     def _sensor_reading(self, sensor_index, api_key):
@@ -534,7 +546,9 @@ class AirQuality(Overlay):
             and last_seen
             and time.time() - last_seen > self.max_reading_age
         ):
-            logger.warning(
+            # Routine: sensors drop off for days. fetch_reading warns if no
+            # sensor is left to fall back on.
+            logger.info(
                 f"PurpleAir sensor {sensor_index} last reported "
                 f"{(time.time() - last_seen) / 60:.0f} minutes ago; "
                 "skipping it"
