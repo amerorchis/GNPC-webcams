@@ -3,7 +3,7 @@ name = "gnpc-webcams"
 version = "0.1.0"
 description = "Brands and republishes the Glacier National Park Conservancy webcam feeds"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "ffmpeg-python>=0.2.0",
     "pillow>=11.3.0",
