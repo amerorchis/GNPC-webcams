@@ -585,6 +585,62 @@ def test_fetch_reading_falls_back_to_a_backup_sensor(monkeypatch, purple_air):
     assert [url.rsplit("/", 1)[-1] for url in calls] == ["1", "2"]
 
 
+def test_a_stale_sensor_with_a_working_backup_is_not_a_warning(
+    monkeypatch, purple_air, caplog
+):
+    stale = int(time.time()) - 2 * 3600
+
+    def fake_get(url, **kwargs):
+        if url.endswith("/sensors/1"):
+            return FakeResponse(sensor_payload(last_seen=stale))
+        return FakeResponse(sensor_payload(pm25=7.5))
+
+    monkeypatch.setattr(Overlays.requests, "get", fake_get)
+    purple_air.fallback_sensors = (2,)
+
+    with caplog.at_level("INFO", logger=Overlays.logger.name):
+        assert purple_air.fetch_reading()["pm25"] == 7.5
+    assert "last reported" in caplog.text
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_losing_the_badge_warns_only_when_it_first_goes(
+    monkeypatch, purple_air, caplog
+):
+    stale = int(time.time()) - 2 * 3600
+    alive = False
+
+    def fake_get(url, **kwargs):
+        if alive:
+            return FakeResponse(sensor_payload(pm25=7.5))
+        return FakeResponse(sensor_payload(last_seen=stale))
+
+    monkeypatch.setattr(Overlays.requests, "get", fake_get)
+    purple_air.fallback_sensors = (2,)
+    purple_air.miss_cache_seconds = 0  # Re-buy the miss on every run
+
+    def warnings():
+        return [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+
+    with caplog.at_level("INFO", logger=Overlays.logger.name):
+        assert purple_air.fetch_reading() is None
+        assert purple_air.fetch_reading() is None
+        # Another camera on the same sensors has nothing new to say either
+        assert AirQuality(sensor_index=1, fallback_sensors=(2,)).fetch_reading() is None
+        assert len(warnings()) == 1
+        assert "skipping air quality overlay" in warnings()[0]
+
+        alive = True
+        assert purple_air.fetch_reading()["pm25"] == 7.5
+        assert "reading is back" in caplog.text
+
+        # Losing it again is news again
+        alive = False
+        Overlays.os.remove(purple_air._cache_path(1))
+        assert purple_air.fetch_reading() is None
+        assert len(warnings()) == 2
+
+
 def test_a_working_primary_sensor_never_reaches_the_backup(monkeypatch, purple_air):
     calls = []
     monkeypatch.setattr(

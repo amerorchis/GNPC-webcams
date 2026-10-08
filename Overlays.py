@@ -470,7 +470,8 @@ class AirQuality(Overlay):
 
         with _purple_air_cache_lock:
             fetched = False
-            for sensor_index in (self.sensor_index, *self.fallback_sensors):
+            sensors = (self.sensor_index, *self.fallback_sensors)
+            for sensor_index in sensors:
                 reading, from_cache = self._sensor_reading(sensor_index, api_key)
                 fetched = fetched or not from_cache
                 if reading is not None:
@@ -482,8 +483,48 @@ class AirQuality(Overlay):
                             f"PurpleAir sensor {self.sensor_index} is unavailable; "
                             f"using backup sensor {sensor_index}"
                         )
+                    self._mark_badge_restored(sensors)
                     return reading
+            self._mark_badge_lost(sensors)
             return None
+
+    def _lost_marker_path(self, sensors):
+        name = "-".join(str(s) for s in sensors)
+        return os.path.join(tempfile.gettempdir(), f"gnpc-purpleair-lost-{name}")
+
+    def _mark_badge_lost(self, sensors):
+        """Warn that the badge is gone, but only the first time.
+
+        Each sensor's own trouble is logged in _sensor_reading; this is the one
+        line that says no sensor is left to fall back on. A sensor can stay
+        dark for weeks, so the warning is kept to the moment the badge goes,
+        not repeated every time the miss is re-bought. The marker lives beside
+        the reading cache, shared by every camera on the same sensors, and is
+        created exclusively so only one camera or overlapping run says it.
+        """
+        sensor_list = ", ".join(str(s) for s in sensors)
+        try:
+            with open(self._lost_marker_path(sensors), "x"):
+                pass
+        except FileExistsError:
+            return
+        except OSError as e:
+            logger.warning(f"Could not record lost PurpleAir badge: {e}")
+        logger.warning(
+            f"No current PurpleAir reading from sensor(s) {sensor_list}; "
+            "skipping air quality overlay until one returns"
+        )
+
+    def _mark_badge_restored(self, sensors):
+        try:
+            os.remove(self._lost_marker_path(sensors))
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            logger.warning(f"Could not clear lost PurpleAir badge: {e}")
+            return
+        sensor_list = ", ".join(str(s) for s in sensors)
+        logger.info(f"PurpleAir reading is back from sensor(s) {sensor_list}")
 
     def _sensor_reading(self, sensor_index, api_key):
         """One sensor's numbers and whether they came from the cache.
@@ -534,7 +575,9 @@ class AirQuality(Overlay):
             and last_seen
             and time.time() - last_seen > self.max_reading_age
         ):
-            logger.warning(
+            # Routine: sensors drop off for days. fetch_reading warns if no
+            # sensor is left to fall back on.
+            logger.info(
                 f"PurpleAir sensor {sensor_index} last reported "
                 f"{(time.time() - last_seen) / 60:.0f} minutes ago; "
                 "skipping it"
