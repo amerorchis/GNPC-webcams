@@ -51,7 +51,7 @@ uv run pytest
 
 ## Development Environment
 
-- **Python version**: 3.11 (uv-managed `.venv/` both locally and on the production Raspberry Pi, synced from uv.lock)
+- **Python version**: 3.12 (`requires-python >=3.12`; uv-managed `.venv/` both locally and on the production Raspberry Pi, synced from uv.lock)
 - **Key dependencies**: Pillow, ffmpeg-python, python-dotenv, PyYAML, requests (see pyproject.toml for versions)
 - **External requirements**: FFmpeg binary must be installed system-wide
 - **Fonts**: `fonts/OpenSans-Bold.ttf` (timestamps) and `fonts/SourceSansVariable-Bold.ttf` (badge) are vendored under the OFL so CI exercises the drawing code; the rest of `fonts/` is local-only
